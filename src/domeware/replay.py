@@ -200,6 +200,19 @@ def build(s: Session) -> dict:
         rec.log(f"world/truth/{f.stem}_path", rr.LineStrips3D([pos], colors=[[0, 200, 80]], radii=0.4), static=True)
         stats[f"truth_{f.stem}_frames"] = len(d)
 
+    wx = s.streams / "weather" / "fmi_nearest.parquet"
+    weather_cols = []
+    if wx.exists():
+        w = pd.read_parquet(wx)
+        if len(w):
+            t = rr.TimeColumn("utc", timestamp=_ts(w["t_utc"]))
+            for col in w.columns.drop("t_utc"):
+                v = pd.to_numeric(w[col], errors="coerce").to_numpy(np.float64)
+                if np.isfinite(v).any():
+                    rec.send_columns(f"weather/{col}", indexes=[t], columns=rr.Scalars.columns(scalars=v))
+                    weather_cols.append(col)
+            stats["weather_lanes"] = weather_cols
+
     for ts, msg in events:
         rec.set_time("utc", timestamp=ts.to_datetime64())
         rec.log("events", rr.TextLog(msg))
@@ -216,6 +229,11 @@ def build(s: Session) -> dict:
             rrb.Vertical(rrb.Spatial3DView(name="Site", origin="/world", time_ranges=[trail]), *chase),
             rrb.Vertical(rrb.TimeSeriesView(name="Range from radar (m)", origin="/plots/range_m"),
                          rrb.TimeSeriesView(name="Height above radar ground (m)", origin="/plots/height_above_radar_ground_m"),
+                         *([rrb.TimeSeriesView(name="Wind (m/s, FMI nearest)", origin="/weather",
+                                               contents=["/weather/wind_ms", "/weather/gust_ms"]),
+                            rrb.TimeSeriesView(name="Temp (C) / visibility (m), FMI", origin="/weather",
+                                               contents=["/weather/temp_c", "/weather/visibility_m"])]
+                           if weather_cols else []),
                          rrb.TextLogView(name="Events", origin="/events")),
             column_shares=[3, 1]),
         rrb.TimePanel(timeline="utc", state="expanded"), collapse_panels=True)

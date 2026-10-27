@@ -30,6 +30,8 @@ import re
 import struct
 import sys
 import xml.etree.ElementTree as ET
+
+from defusedxml.ElementTree import fromstring as safe_fromstring
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -214,7 +216,7 @@ def split_fragments(data: bytes):
             yield i, s, None, "rejected: DOCTYPE/ENTITY declaration in fragment"
             continue
         try:
-            root = ET.fromstring(chunk)
+            root = safe_fromstring(chunk)
             yield i, s, root, None
         except ET.ParseError as exc:
             yield i, s, None, f"{type(exc).__name__}: {exc}"

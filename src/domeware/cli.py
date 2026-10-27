@@ -59,6 +59,12 @@ def main(argv: list[str] | None = None) -> int:
 
             convert.convert_truth(s)
             s.save()
+        from domeware import weather
+
+        try:
+            weather.fetch(s)
+        except Exception as e:  # weather is context; a failed fetch must not stop the run
+            s.note(f"weather: not fetched ({e})")
     if a.cmd in ("run", "replay"):
         from domeware import replay
 

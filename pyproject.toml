@@ -19,6 +19,7 @@ dependencies = [
     "rerun-sdk==0.40.0",
     "scipy>=1.18.1",
     "pymavlink>=2.4.50",
+    "defusedxml>=0.7.1",
 ]
 
 [project.scripts]
