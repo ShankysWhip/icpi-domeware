@@ -169,6 +169,32 @@ def log_features(rec, s: Session, site: dict, stats: dict) -> None:
         stats["tree_points"] = int(len(pos))
 
 
+def log_los(rec, s: Session, site: dict, stats: dict, spacing_m: float = 20.0) -> None:
+    """MODELLED line of sight as coloured ground dots: green = visible near the ground, red = needs > 50 m."""
+    p = s.env / "los_min_agl.tif"
+    if not p.exists():
+        return
+    from domeware.convert import terrain_alignment_m
+
+    with rasterio.open(p) as src:
+        step = max(1, int(spacing_m / src.res[0]))
+        a = src.read(1)[::step, ::step]
+        b, (rx, ry) = src.bounds, src.res
+    rows, cols = np.nonzero(np.isfinite(a))
+    x = b.left + (cols * step + 0.5) * rx
+    y = b.top - (rows * step + 0.5) * ry
+    v = a[rows, cols]
+    ground = _dem_lookup(s, terrain_alignment_m(s))
+    pos = _tm_to_enu(x, y, ground(x, y) + 0.5, site)
+    t = np.clip(v / 50.0, 0, 1)[:, None]
+    colors = (np.array([[40, 200, 90]]) * (1 - t) + np.array([[220, 40, 40]]) * t).astype(np.uint8)
+    rec.log("world/los_MODELLED", rr.Points3D(pos, colors=colors, radii=3.0), static=True)
+    rec.log("world/los_MODELLED", rr.TextDocument("MODELLED geometric line of sight (terrain + canopy + buildings, k=4/3). "
+                                                  "Green: visible near the ground. Red: target must be 50+ m above "
+                                                  "ground to be in sight. Not a detection probability."), static=True)
+    stats["los_points"] = int(len(pos))
+
+
 def truth_files(s: Session) -> list[Path]:
     """Every drone-position stream: streams/truth/*.parquet (SRT, ArduPilot) and streams/dji/*_osd.parquet."""
     return sorted(s.streams.glob("truth/*.parquet")) + sorted(s.streams.glob("dji/*_osd.parquet"))
@@ -208,6 +234,7 @@ def build(s: Session) -> dict:
     if glb is not None:
         rec.log("world/terrain", rr.Asset3D(contents=glb, media_type="model/gltf-binary"), static=True)
     log_features(rec, s, site, stats)
+    log_los(rec, s, site, stats)
 
     ground_z = (site["ground_level_m"] - site["alt_m"]) if site.get("ground_level_m") else 0.0
     rec.log("world/radar", rr.Points3D([[0, 0, 0]], colors=[[255, 120, 0]], radii=4.0,
@@ -350,4 +377,16 @@ def quicklooks(s: Session, site: dict, focus_ids: list) -> list[str]:
     fig.savefig(p, dpi=110, bbox_inches="tight")
     plt.close(fig)
     out.append(p.name)
+    if (s.env / "los_min_agl.tif").exists():
+        with rasterio.open(s.env / "los_min_agl.tif") as src:
+            a, b = src.read(1), src.bounds
+        fig, ax = plt.subplots(figsize=(10, 9))
+        im = ax.imshow(a, extent=(b.left, b.right, b.bottom, b.top), cmap="RdYlGn_r", vmin=0, vmax=100)
+        fig.colorbar(im, ax=ax, label="min. height above ground for line of sight (m)  [MODELLED]")
+        ax.plot([e0], [n0], "^", color="black", ms=10)
+        ax.set_title("MODELLED geometric line of sight from the radar (terrain + canopy + buildings, k=4/3)")
+        p = s.views / "quicklook_los_MODELLED.png"
+        fig.savefig(p, dpi=100, bbox_inches="tight")
+        plt.close(fig)
+        out.append(p.name)
     return out

@@ -66,6 +66,12 @@ def main(argv: list[str] | None = None) -> int:
         except Exception as e:  # realism layers are optional; the run continues without them
             s.note(f"features: not fetched ({e})")
         try:
+            from domeware import los
+
+            los.compute(s, max_range_m=getattr(a, "radius", 3000.0))
+        except Exception as e:
+            s.note(f"los: not computed ({e})")
+        try:
             weather.fetch(s)
         except Exception as e:  # weather is context; a failed fetch must not stop the run
             s.note(f"weather: not fetched ({e})")

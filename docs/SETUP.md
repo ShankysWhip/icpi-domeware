@@ -1,4 +1,4 @@
-> Copied from Work/domeware-vendor/SETUP.md (23 Oct 2026). The vendor data files (PROJ grids, leap table) are not in git: download them as listed below into Workdomeware-vendor.
+> Copied from Work/domeware-vendor/SETUP.md (23 Oct 2026). The vendor data files (PROJ grids, leap table) are not in git: download them as listed below into `Work/domeware-vendor`.
 
 # Domeware: laptop setup (no admin needed)
 
