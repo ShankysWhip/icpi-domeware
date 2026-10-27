@@ -81,10 +81,61 @@ def read_ardupilot_bin(path: Path) -> tuple[pd.DataFrame, dict]:
     return df, meta
 
 
+PROJ_DIR = Path.home() / "Work" / "domeware-vendor" / "proj"  # vendored FIN2023N2000 + NKG grids
+
+
+def ellipsoidal_to_n2000(lat, lon, h_ell) -> np.ndarray:
+    """EUREF-FIN ellipsoidal height -> N2000 with the FIN2023N2000 geoid. Fails loudly without the grid."""
+    import pyproj
+    from pyproj.transformer import TransformerGroup
+
+    pyproj.network.set_network_enabled(False)
+    if PROJ_DIR.exists():
+        pyproj.datadir.append_data_dir(str(PROJ_DIR))
+    tg = TransformerGroup("EPSG:4937", "EPSG:4258+3900", always_xy=True)
+    best = tg.transformers[0] if tg.transformers else None
+    if best is None or "allpark" in best.description:
+        raise RuntimeError(f"N2000 geoid grid missing (would be ~18 m wrong). Put fi_nls_fin2023n2000.tif in {PROJ_DIR}")
+    return best.transform(np.asarray(lon), np.asarray(lat), np.asarray(h_ell))[2]
+
+
+def read_rtklib_pos(path: Path) -> tuple[pd.DataFrame, dict]:
+    """RTKLIB .pos (lat/lon/height output). Time scale from the header (GPST or UTC); height ellipsoidal."""
+    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    head = [ln for ln in lines if ln.startswith("%")]
+    gpst = not any("UTC" in ln for ln in head[-1:])
+    if any("geoid" in ln.lower() for ln in head):
+        raise ValueError(f"{path.name}: geoid heights in .pos; export ellipsoidal heights (RTKLIB default)")
+    rows = []
+    for ln in lines:
+        if ln.startswith("%") or not ln.strip():
+            continue
+        p = ln.split()
+        rows.append({"t": f"{p[0]} {p[1]}", "lat_deg": float(p[2]), "lon_deg": float(p[3]), "h_ell_m": float(p[4]),
+                     "rtk_q": int(p[5]), "ns": int(p[6])})
+    if not rows:
+        raise ValueError(f"{path.name}: no solution lines")
+    df = pd.DataFrame(rows)
+    df["t_utc"] = pd.to_datetime(df.pop("t"), format="%Y/%m/%d %H:%M:%S.%f", utc=True)
+    if gpst:
+        df["t_utc"] -= pd.Timedelta(seconds=GPS_UTC_LEAP_S)
+    df["h_n2000_m"] = ellipsoidal_to_n2000(df["lat_deg"], df["lon_deg"], df["h_ell_m"])
+    df["h_rel_takeoff_m"] = df["h_n2000_m"] - df["h_n2000_m"].iloc[:10].median()
+    meta = {"time_method": "GPST - 18 s" if gpst else "UTC as in file", "rows": len(df),
+            "fix_share": round(float((df["rtk_q"] == 1).mean()), 3),
+            "height_note": "ellipsoidal -> N2000 via FIN2023N2000; rtk_q 1 = fix, 2 = float"}
+    return df, meta
+
+
 def to_radar_frame(df: pd.DataFrame, site: dict, ground_at_takeoff_n2000: float | None, alignment_m: float) -> pd.DataFrame:
     from domeware.replay import enu
 
     df = df.copy()
+    if "h_n2000_m" in df:  # absolute heights (RTK): no take-off ground needed
+        df["h_radar_frame_m"] = df["h_n2000_m"] + alignment_m
+        e, n, u = enu(df["lat_deg"], df["lon_deg"], df["h_radar_frame_m"], site["lat_deg"], site["lon_deg"], site["alt_m"])
+        df["e_m"], df["n_m"], df["u_m"] = e, n, u
+        return df
     if ground_at_takeoff_n2000 is None:
         df["h_radar_frame_m"] = np.nan
         df[["e_m", "n_m", "u_m"]] = np.nan

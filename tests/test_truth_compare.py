@@ -47,3 +47,18 @@ def test_compare_recovers_known_offset_with_mixed_time_units():
 
 def test_simulated_fixture_is_labelled():
     assert all("SIMULATED" in p.name for p in FIX.glob("*"))
+
+
+def test_rtklib_pos_gpst_and_n2000(tmp_path):
+    import pytest
+
+    from domeware.adapters import truth as T
+
+    if not (T.PROJ_DIR / "fi_nls_fin2023n2000.tif").exists():
+        pytest.skip("vendored N2000 grid not present")
+    p = tmp_path / "x.pos"
+    p.write_text("% program   : RTKLIB\n%  GPST                  latitude(deg) longitude(deg)  height(m)   Q  ns\n"
+                 "2026/10/21 10:30:18.000   65.176667000   26.043982000   115.000   1  14\n")
+    df, meta = T.read_rtklib_pos(p)
+    assert str(df["t_utc"].iloc[0]) == "2026-10-21 10:30:00+00:00"  # GPST - 18 s
+    assert 15 < 115.0 - df["h_n2000_m"].iloc[0] < 20  # geoid undulation in northern Finland is ~17-18 m

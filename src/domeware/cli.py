@@ -29,7 +29,7 @@ def main(argv: list[str] | None = None) -> int:
         if name == "run":
             p.add_argument("--radius", type=float, default=3000.0, help="environment radius around the radar (m)")
             p.add_argument("--no-env", action="store_true", help="skip terrain/imagery download")
-    for name in ("convert", "replay", "verify", "info"):
+    for name in ("convert", "replay", "verify", "info", "report"):
         sub.add_parser(name).add_argument("session", type=Path)
     p = sub.add_parser("env")
     p.add_argument("session", type=Path)
@@ -86,6 +86,10 @@ def main(argv: list[str] | None = None) -> int:
 
         for r in compare.run(s, gate_m=getattr(a, "gate", 50.0)):
             print(json.dumps({k: v for k, v in r.items() if not k.startswith("error_")}, indent=1, default=str))
+    if a.cmd in ("run", "report"):
+        from domeware import report
+
+        report.build(s)
     if a.cmd == "verify":
         problems = s.verify()
         print("\n".join(problems) if problems else f"OK: {len(s.manifest['raw'])} raw files match their hashes")

@@ -1,0 +1,105 @@
+"""One readable report per session: views/report.md (Markdown with the quicklook images)."""
+
+from __future__ import annotations
+
+import json
+
+import pandas as pd
+
+from domeware.session import Session, now_utc
+
+
+def _tbl(rows: list[list], head: list[str]) -> str:
+    out = ["| " + " | ".join(head) + " |", "|" + "---|" * len(head)]
+    out += ["| " + " | ".join("" if v is None else str(v) for v in r) + " |" for r in rows]
+    return "\n".join(out)
+
+
+def build(s: Session) -> str:
+    m, v = s.manifest, s.views
+    site = m.get("site") or {}
+    stats = json.loads((v / "replay_stats.json").read_text(encoding="utf-8")) if (v / "replay_stats.json").exists() else {}
+    cmp_ = json.loads((v / "compare.json").read_text(encoding="utf-8")) if (v / "compare.json").exists() else []
+    md = [f"# Run report: {site.get('name') or s.root.name}", "",
+          f"Session `{s.root.name}` · id `{m['session_id']}` · generated {now_utc()} by domeware", ""]
+
+    md += ["## Data received", ""]
+    roles: dict[str, list] = {}
+    for r in m["raw"]:
+        roles.setdefault(r["role"], []).append(r)
+    md += [_tbl([[k, len(x), f"{sum(i['size'] for i in x) / 1e6:.1f}"] for k, x in sorted(roles.items())],
+                ["type", "files", "MB"]), "",
+           f"All {len(m['raw'])} raw files are kept unchanged with SHA-256 hashes in `manifest.json` (`dw verify` checks them).", ""]
+
+    md += ["## Site", "", _tbl([[site.get("name"), site.get("lat_deg"), site.get("lon_deg"), site.get("alt_m"),
+                                 site.get("ground_level_m"), site.get("azimuth_deg")]],
+                               ["radar", "lat", "lon", "antenna alt (m)", "ground (m)", "azimuth (deg)"]),
+           "", f"Position as declared by the radar. Altitude datum: {site.get('alt_datum')}.", ""]
+
+    md += ["## Radar", ""]
+    for name, st in m["streams"].items():
+        if "unique_tracks" in st:
+            md.append(f"- **{name}**: {st['unique_tracks']} tracks, {st['tracks_kept']} unique track states "
+                      f"({st['duplicates_dropped']} repeated states removed), focus track **{st.get('focus_track')}**.")
+    if stats.get("events"):
+        md += ["", "Focus-track events (UTC):", ""] + [f"- {e}" for e in stats["events"]]
+    md.append("")
+
+    md += ["## Radar vs drone truth", ""]
+    if cmp_:
+        keys = ["truth", "flight_s", "drone_track_ids", "delay_airborne_to_first_track_s",
+                "delay_airborne_to_first_DRONE_class_s", "delay_airborne_to_first_alarm_s", "tracked_share_of_flight",
+                "track_breaks", "range_at_first_track_m", "max_range_tracked_m", "other_tracks_during_flight"]
+        md += [_tbl([[k.replace("_", " ")] + [r.get(k) for r in cmp_] for k in keys], ["measure"] + [f"#{i + 1}" for i in range(len(cmp_))]), ""]
+        for r in cmp_:
+            e = r.get("error_horizontal_m")
+            if e:
+                md.append(f"- {r['truth']}: horizontal error median **{e['median']} m**, p90 {e['p90']} m, RMS {e['rms']} m "
+                          f"(n = {e['n']}); vertical median {(r.get('error_vertical_m') or {}).get('median')} m.")
+        md += ["", "Rule: a radar track is the drone when its median 3D distance to truth is under the gate "
+               f"({(m.get('compare') or {}).get('gate_m')} m). Details: `compare.md`.", ""]
+    else:
+        md += ["No drone truth in this session yet (DJI .SRT captions, ArduPilot .bin or RTKLIB .pos).", ""]
+
+    wx = s.streams / "weather" / "fmi_nearest.parquet"
+    if wx.exists() and cmp_:
+        w = pd.read_parquet(wx)
+        w["t_utc"] = pd.to_datetime(w["t_utc"], utc=True)
+        a, b = pd.Timestamp(cmp_[0]["airborne_utc"]), pd.Timestamp(cmp_[0]["landed_utc"])
+        win = w[(w["t_utc"] >= a.floor("10min")) & (w["t_utc"] <= b.ceil("10min"))]
+        params = (m["streams"].get("weather") or {}).get("parameters", {})
+        rows = [[c, f"{win[c].min():.1f}", f"{win[c].max():.1f}", params.get(c, {}).get("unit"),
+                 params.get(c, {}).get("station"), params.get(c, {}).get("dist_km")]
+                for c in ("wind_ms", "gust_ms", "wind_dir_deg", "temp_c", "visibility_m", "cloud_okta", "precip_mmh")
+                if c in win and win[c].notna().any()]
+        md += ["## Conditions during the flight (FMI, nearest stations)", "", _tbl(rows, ["", "min", "max", "unit", "station", "km"]),
+               "", "These are regional observations, not on-site measurements.", ""]
+
+    md += ["## Environment", ""]
+    env, feat, los = m.get("env") or {}, m.get("features") or {}, m.get("los") or {}
+    if env:
+        md.append(f"- Terrain: NLS 2 m elevation model; aerial photo {', '.join(env['ortho']['labels'])}; radius {env['radius_m']:.0f} m.")
+    if feat:
+        md.append(f"- {feat.get('buildings', 0)} buildings (heights ESTIMATED from floor class), {feat.get('power_lines', 0)} "
+                  f"power-line segments (heights ASSUMED), canopy {feat.get('canopy', {}).get('years')}.")
+    if los:
+        md.append(f"- **MODELLED line of sight** (geometry only): a target at 30 m above ground is in sight over "
+                  f"{los['share_visible_below_30m']:.0%} of the area within {los['max_range_m']:.0f} m; at ground level "
+                  f"{los['share_visible_at_ground']:.0%}.")
+    md.append(f"- Terrain aligned to the radar's declared ground level: {stats.get('vertical_alignment_m')} m.")
+    md.append("")
+
+    md += ["## Pictures", ""] + [f"![{p}]({p})" for p in stats.get("quicklooks", [])] + \
+          [f"![{p.name}]({p.name})" for p in sorted(v.glob("compare_*.png"))] + [""]
+    md += ["## Replay", "", "`uv run rerun --bind 127.0.0.1 --port auto <session>\\views\\replay.rrd`", ""]
+    md += ["## Known limits", "",
+           "- The radar's altitude datum is unconfirmed; vertical errors are indicative until the radar owner confirms it.",
+           "- NLS data (ETRS89) and WGS84 positions are combined without the ~0.9 m plate-motion shift; fine for replay, "
+           "not for sub-metre claims.",
+           "- Building and power-line heights are estimates; line of sight is MODELLED, not detection probability.",
+           "", "## Sources", "", f"- {(env or {}).get('attribution', '')}", f"- {feat.get('attribution', '')}",
+           f"- {(m['streams'].get('weather') or {}).get('attribution', '')}", ""]
+    text = "\n".join(md)
+    (v / "report.md").write_text(text, encoding="utf-8")
+    s.note("report: views/report.md")
+    return text

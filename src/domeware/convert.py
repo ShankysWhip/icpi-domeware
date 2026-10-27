@@ -107,7 +107,9 @@ def terrain_alignment_m(s: Session) -> float:
 def convert_truth(s: Session) -> None:
     from domeware.adapters import truth as T
 
-    jobs = [(f, T.read_dji_srt) for f in s.raw_files("dji_srt")] + [(f, T.read_ardupilot_bin) for f in s.raw_files("ardupilot_bin")]
+    jobs = ([(f, T.read_dji_srt) for f in s.raw_files("dji_srt")]
+            + [(f, T.read_ardupilot_bin) for f in s.raw_files("ardupilot_bin")]
+            + [(f, T.read_rtklib_pos) for f in s.raw_files("rtklib_pos")])
     if not jobs:
         return
     site = s.manifest.get("site")
@@ -140,7 +142,6 @@ def report_unhandled(s: Session) -> None:
                                       "(python -m domeware.adapters.dji_decode) or export CSV from Airdata/DJI, "
                                       "then 'dw ingest' the CSV.",
         "mavlink_tlog": "MAVLink .tlog: stored raw; converter not written yet.",
-        "rtklib_pos": "RTKLIB .pos truth: stored raw; converter not written yet.",
         "unknown": "Unknown file type: stored raw only.",
     }
     for role, hint in hints.items():
