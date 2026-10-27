@@ -93,12 +93,52 @@ def _dem_height_at_home(s: Session, df: pd.DataFrame) -> float | None:
     return sample_dem(dem, float(lat.iloc[0]), float(lon.iloc[0]))
 
 
+def terrain_alignment_m(s: Session) -> float:
+    """Radar's declared ground level minus NLS DEM at the radar (0 if unknown). Used for terrain and truth heights."""
+    site, dem = s.manifest.get("site") or {}, s.env / "dem.tif"
+    if not dem.exists() or site.get("ground_level_m") is None:
+        return 0.0
+    from domeware.env import sample_dem
+
+    g = sample_dem(dem, site["lat_deg"], site["lon_deg"])
+    return 0.0 if g is None else site["ground_level_m"] - g
+
+
+def convert_truth(s: Session) -> None:
+    from domeware.adapters import truth as T
+
+    jobs = [(f, T.read_dji_srt) for f in s.raw_files("dji_srt")] + [(f, T.read_ardupilot_bin) for f in s.raw_files("ardupilot_bin")]
+    if not jobs:
+        return
+    site = s.manifest.get("site")
+    align = terrain_alignment_m(s)
+    out = s.streams / "truth"
+    out.mkdir(parents=True, exist_ok=True)
+    for f, reader in jobs:
+        try:
+            df, meta = reader(f)
+        except Exception as e:  # one bad file must not stop the others; the reason is recorded
+            s.note(f"truth: {f.name}: NOT converted: {e}")
+            continue
+        ground = None
+        if site and (s.env / "dem.tif").exists():
+            from domeware.env import sample_dem
+
+            ground = sample_dem(s.env / "dem.tif", float(df["lat_deg"].iloc[0]), float(df["lon_deg"].iloc[0]))
+        df = T.to_radar_frame(df, site, ground, align) if site else df
+        df["source"] = f.name
+        df.to_parquet(out / f"{f.stem}.parquet", index=False)
+        meta.update({"ground_at_takeoff_n2000_m": ground, "terrain_alignment_m": round(align, 2), "file": f.name})
+        s.manifest["streams"][f"truth/{f.stem}"] = meta
+        s.note(f"truth: {f.name}: {meta['rows']} fixes, {df['t_utc'].iloc[0]} .. {df['t_utc'].iloc[-1]}"
+               + ("" if ground is not None else " (no DEM yet: run dw env, then dw convert, for heights)"))
+
+
 def report_unhandled(s: Session) -> None:
     hints = {
         "dji_flightrecord_encrypted": "DJI log v13+ is encrypted. Decode it with a DJI developer API key "
                                       "(python -m domeware.adapters.dji_decode) or export CSV from Airdata/DJI, "
                                       "then 'dw ingest' the CSV.",
-        "ardupilot_bin": "ArduPilot .bin: stored raw; converter comes next (needs a real sample).",
         "mavlink_tlog": "MAVLink .tlog: stored raw; converter not written yet.",
         "rtklib_pos": "RTKLIB .pos truth: stored raw; converter not written yet.",
         "unknown": "Unknown file type: stored raw only.",
@@ -112,5 +152,6 @@ def report_unhandled(s: Session) -> None:
 def run(s: Session) -> None:
     convert_robin(s)
     convert_dji_csv(s)
+    convert_truth(s)
     report_unhandled(s)
     s.save()

@@ -52,6 +52,8 @@ def detect_role(path: Path) -> str:
         return "dji_flightrecord_encrypted"
     if name.endswith(".csv") and (b"OSD.latitude" in head or b"OSD.longitude" in head):
         return "dji_csv"
+    if name.endswith(".srt") and (b"latitude" in head.lower() or b"longtitude" in head.lower()):
+        return "dji_srt"
     if name.endswith(".bin") and head[:2] == b"\xa3\x95":
         return "ardupilot_bin"
     if name.endswith(".tlog"):

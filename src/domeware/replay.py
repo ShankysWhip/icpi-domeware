@@ -25,7 +25,6 @@ from PIL import Image  # noqa: E402
 from pyproj import Transformer  # noqa: E402
 from rasterio.enums import Resampling  # noqa: E402
 
-from domeware.env import sample_dem  # noqa: E402
 from domeware.session import Session  # noqa: E402
 
 TM35_TO_LL = Transformer.from_crs("EPSG:3067", "EPSG:4326", always_xy=True)
@@ -68,8 +67,9 @@ def terrain_glb(s: Session, site: dict, max_grid: int = 700, max_tex: int = 4096
         z[z == src.nodata] = np.nan
         b = src.bounds
     z = np.where(np.isfinite(z), z, np.nanmedian(z))
-    ground_dem = sample_dem(dem_p, site["lat_deg"], site["lon_deg"])
-    offset = (site["ground_level_m"] - ground_dem) if (site.get("ground_level_m") and ground_dem is not None) else 0.0
+    from domeware.convert import terrain_alignment_m
+
+    offset = terrain_alignment_m(s)
     xs = np.linspace(b.left, b.right, w)
     ys = np.linspace(b.top, b.bottom, h)  # row 0 = north
     X, Y = np.meshgrid(xs, ys)
@@ -99,6 +99,11 @@ def terrain_glb(s: Session, site: dict, max_grid: int = 700, max_tex: int = 4096
             "vertical_alignment_m": round(offset, 2),
             "vertical_alignment_note": "terrain shifted so DEM at the radar equals the radar's declared ground level"}
     return mesh.export(file_type="glb", include_normals=True), info
+
+
+def truth_files(s: Session) -> list[Path]:
+    """Every drone-position stream: streams/truth/*.parquet (SRT, ArduPilot) and streams/dji/*_osd.parquet."""
+    return sorted(s.streams.glob("truth/*.parquet")) + sorted(s.streams.glob("dji/*_osd.parquet"))
 
 
 def _ts(series: pd.Series) -> np.ndarray:
@@ -184,7 +189,7 @@ def build(s: Session) -> dict:
                                  .partition([1] * len(pl)))
                 rec.log("world/potential_drone_plots", rr.Points3D.from_fields(colors=[[170, 80, 255]], radii=1.5), static=True)
 
-    for f in sorted((s.streams / "dji").glob("*_osd.parquet")) if (s.streams / "dji").exists() else []:
+    for f in truth_files(s):
         d = pd.read_parquet(f).dropna(subset=["t_utc", "e_m", "n_m", "u_m"]).sort_values("t_utc")
         if d.empty:
             continue
@@ -246,7 +251,7 @@ def quicklooks(s: Session, site: dict, focus_ids: list) -> list[str]:
                 x, y = LL_TO_TM35.transform(g["lon_deg"].to_numpy(), g["lat_deg"].to_numpy())
                 alarm = bool(g["alarm"].fillna(False).astype(bool).any())
                 ax.plot(x, y, "-", lw=2.2 if tid in focus_ids else 1, color="red" if alarm else "cyan")
-    for f in sorted((s.streams / "dji").glob("*_osd.parquet")) if (s.streams / "dji").exists() else []:
+    for f in truth_files(s):
         d = pd.read_parquet(f, columns=["lat_deg", "lon_deg"]).dropna()
         x, y = LL_TO_TM35.transform(d["lon_deg"].to_numpy(), d["lat_deg"].to_numpy())
         ax.plot(x, y, "-", lw=1.5, color="lime")

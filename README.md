@@ -38,7 +38,20 @@ If a Windows Firewall prompt appears anyway, press **Cancel**.
 | Robin `.PLOTS.gz` / `.IMG` | stored raw; text headers read |
 | DJI CSV (dji-log-parser style `OSD.*` columns) | converted, on the same ENU frame as the radar |
 | DJI FlightRecord `.txt` v13+ (encrypted) | stored raw; decode with a DJI API key (`python -m domeware.adapters.dji_decode`) or export CSV |
-| ArduPilot `.bin`, MAVLink `.tlog`, RTKLIB `.pos` | stored raw; converters next |
+| DJI video captions `.SRT` (turn on "Video Captions" in DJI Fly) | converted as drone truth; local time → UTC, DST-aware |
+| ArduPilot `.bin` | converted as drone truth (GPS week/ms − 18 s leap) |
+| MAVLink `.tlog`, RTKLIB `.pos` | stored raw; converters next |
+
+## Radar vs drone
+
+When drone truth exists, `dw run` also runs `dw compare` and writes `views/compare.md` + `compare_<log>.png`:
+- **Delays:** from airborne to the first radar track, first DRONE class and first alarm.
+- **Tracking:** share of the flight tracked, track breaks.
+- **Position error:** horizontal, vertical and 3D (median / p90 / RMS).
+- **Range:** at first track, and the maximum range tracked.
+- **Other tracks:** how many other tracks appeared during the flight.
+
+Rule: a radar track is the drone if its median 3D distance to truth is under the gate (`--gate`, default 50 m).
 
 ## Rules
 

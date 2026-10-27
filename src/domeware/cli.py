@@ -34,6 +34,9 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("env")
     p.add_argument("session", type=Path)
     p.add_argument("--radius", type=float, default=3000.0)
+    p = sub.add_parser("compare", help="radar tracks vs drone truth: delays, errors, coverage")
+    p.add_argument("session", type=Path)
+    p.add_argument("--gate", type=float, default=50.0, help="association gate, metres (median 3D distance)")
     a = ap.parse_args(argv)
     s = Session(a.session)
 
@@ -51,12 +54,22 @@ def main(argv: list[str] | None = None) -> int:
         from domeware import env
 
         env.fetch(s, radius_m=a.radius)
+        if a.cmd == "run":  # truth heights need the DEM, which needs the site from the radar data
+            from domeware import convert
+
+            convert.convert_truth(s)
+            s.save()
     if a.cmd in ("run", "replay"):
         from domeware import replay
 
         stats = replay.build(s)
         for e in stats.get("events", []):
             print("  ", e)
+    if a.cmd == "compare" or (a.cmd == "run" and any(s.streams.glob("truth/*.parquet"))):
+        from domeware import compare
+
+        for r in compare.run(s, gate_m=getattr(a, "gate", 50.0)):
+            print(json.dumps({k: v for k, v in r.items() if not k.startswith("error_")}, indent=1, default=str))
     if a.cmd == "verify":
         problems = s.verify()
         print("\n".join(problems) if problems else f"OK: {len(s.manifest['raw'])} raw files match their hashes")
