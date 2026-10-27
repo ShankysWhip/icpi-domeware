@@ -1,0 +1,34 @@
+[project]
+name = "domeware"
+version = "0.1.0"
+description = "ICPI internal tool: convert C-UAS test-run data (radar, drone, truth, weather) to one UTC-aligned session and replay it in its real environment"
+authors = [{ name = "Niklas Nikulainen", email = "Niklas.nikulainen@icpi.fi" }]
+requires-python = ">=3.13"
+dependencies = [
+    "numpy>=2.5",
+    "pandas>=3.0",
+    "pyarrow>=26.0",
+    "pyproj>=3.8",
+    "rasterio>=1.5",
+    "geopandas>=1.2",
+    "shapely>=2.2",
+    "trimesh>=5.1",
+    "pillow>=11",
+    "requests>=2.34",
+    "matplotlib>=3.11",
+    "rerun-sdk==0.40.0",
+    "scipy>=1.18.1",
+]
+
+[project.scripts]
+dw = "domeware.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=9.1", "ruff>=0.17"]
+
+[build-system]
+requires = ["uv_build>=0.13.4,<0.14.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 120
