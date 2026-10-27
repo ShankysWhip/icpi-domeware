@@ -1,0 +1,352 @@
+<title>ICPI Run Scorecards</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: field clipboard. Sticky run bar, then the scorecard top to bottom in the same order as the Doc. */
+:root {
+  --bg: #f3f4f1; --surface: #ffffff; --ink: #1d232a; --muted: #5e6872; --line: #d9ddd6;
+  --accent: #e35d12; --red: #b9352f; --blue: #2457a6; --pass: #23794a; --fail: #b9352f; --na: #7c858d;
+  --chip: #eef0ec;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #15191d; --surface: #1d2227; --ink: #e8ebe6; --muted: #9aa4ad; --line: #2e353c;
+  --accent: #f07a3a; --red: #e06a62; --blue: #7aa5ea; --pass: #46b37a; --fail: #e06a62; --na: #8e979f; --chip: #252b31;
+  color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #15191d; --surface: #1d2227; --ink: #e8ebe6; --muted: #9aa4ad; --line: #2e353c;
+  --accent: #f07a3a; --red: #e06a62; --blue: #7aa5ea; --pass: #46b37a; --fail: #e06a62; --na: #8e979f; --chip: #252b31;
+  color-scheme: dark }
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.45 var(--sans); }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--surface); }
+.wrap { max-width: 980px; margin: 0 auto; padding-block: 0 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--surface); border-bottom: 1px solid var(--line); }
+.bar .wrap { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; padding-block: 10px; }
+.brand { font-weight: 700; letter-spacing: .02em; margin-right: auto; }
+.brand span { color: var(--accent); }
+.sync { font: 12px var(--mono); color: var(--muted); }
+select, input, textarea, button { font: inherit; color: var(--ink); }
+select, input, textarea { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; width: 100%; min-width: 0; }
+input:focus-visible, select:focus-visible, button:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+button { border: 1px solid var(--line); background: var(--surface); border-radius: 6px; padding: 7px 12px; cursor: pointer; }
+.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.runpick { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.runpick select { width: auto; max-width: 60vw; }
+h1 { font-size: 24px; margin: 22px 0 4px; text-wrap: balance; }
+h2 { font-size: 19px; margin: 30px 0 4px; text-wrap: balance; }
+h2.red { color: var(--red); } h2.blue { color: var(--blue); }
+h3 { font-size: 15px; margin: 18px 0 6px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.lead { color: var(--muted); margin: 0 0 8px; max-width: 70ch; }
+.fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px 14px; }
+.fields label { display: flex; flex-direction: column; gap: 3px; font-size: 13px; color: var(--muted); min-width: 0; }
+.tbl { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 7px 9px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+th { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; background: var(--chip); }
+td.id { font: 500 13px var(--mono); color: var(--muted); white-space: nowrap; }
+td.q { min-width: 200px; } td.v { min-width: 150px; } td.n { min-width: 150px; }
+td.v small { display: block; color: var(--muted); font-size: 12px; margin-bottom: 2px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; padding: 8px 10px; min-width: 50px; background: var(--surface); }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button.on[data-v="Pass"] { background: var(--pass); color: #fff; }
+.seg button.on[data-v="Fail"] { background: var(--fail); color: #fff; }
+.seg button.on[data-v="N/A"] { background: var(--na); color: #fff; }
+tr.off td { opacity: .5; }
+.sum td.num, .sum th.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--mono); }
+.callout { margin-top: 10px; padding: 10px 12px; border-left: 4px solid var(--red); background: var(--chip); border-radius: 0 6px 6px 0; }
+.empty { margin: 40px 0; padding: 24px; border: 1px dashed var(--line); border-radius: 8px; color: var(--muted); }
+.newrun { display: flex; gap: 8px; flex-wrap: wrap; max-width: 520px; margin-top: 12px; }
+.newrun input { flex: 1 1 220px; }
+.howto li { margin: 3px 0; }
+@media (prefers-reduced-motion: no-preference) { .seg button { transition: background .12s; } }
+</style>
+
+<div class="bar"><div class="wrap">
+  <div class="brand">ICPI <span>Run Scorecards</span></div>
+  <div class="runpick">
+    <select id="run-select" aria-label="Choose run"><option value="">Choose a run…</option></select>
+    <button id="new-run-btn">New run</button>
+  </div>
+  <div class="sync" id="sync">Connecting…</div>
+</div></div>
+
+<div class="wrap">
+  <div id="new-run" class="newrun" hidden>
+    <input id="new-run-id" placeholder="Run ID, e.g. OULU-2026-10-28-R1" aria-label="New run ID">
+    <button class="primary" id="create-run">Create run</button>
+  </div>
+  <div id="empty" class="empty">
+    <strong>No run open.</strong> Choose a run from the list above, or press <b>New run</b> and give it a Run ID.
+    Everything you enter is saved straight away and the whole team sees the same card.
+  </div>
+  <div id="card" hidden></div>
+</div>
+
+<script>
+const PHASES = [["P1", "Low flight"], ["P2", "Distance flight"], ["P3", "Approach (non-contact “strike”)"], ["P4", "Hover (optional)"]];
+const RUN_FIELDS = [
+  ["run_id", "Run ID"], ["date", "Date (UTC)"], ["site", "Site"], ["plan_start", "Planned start UTC"],
+  ["start", "Actual start UTC"], ["end", "Actual end UTC"], ["pause", "No-drone pause before / after (UTC)"],
+  ["pilots", "Pilots / operators"], ["observer", "Observer"], ["drones", "Drones: IDs and exact models"],
+  ["n_drones", "Number of drones"], ["mode", "Mode: manual / autonomous / mixed"],
+  ["clocks", "Clocks checked on UTC: offsets"], ["tarps", "Tarps placed at 500 m / 1 km / 2 km"],
+  ["wx_start", "Weather at start (Vaisala)"], ["wx_end", "Weather at end (Vaisala)"],
+  ["outcome", "Outcome: Ended / Aborted (reason)"], ["data", "Data saved: SD cards, files, folder"], ["notes", "Notes"],
+];
+// [id, group, check, value label]
+const RED = [
+  ["R1", "RUN", "Run started at the planned time", "Delay (s)"],
+  ["R2", "RUN", "No-drone pause before and after the run", ""],
+  ["R3", "RUN", "All clocks on UTC (drones, laptop, weather)", "Max offset (s)"],
+  ["R4", "RUN", "Weather recorded at start and end (Vaisala)", ""],
+  ["R5", "RUN", "Battery level and temperature recorded for each drone", ""],
+  ["R6", "RUN", "No technical failure (battery, lost link, crash)", "What failed"],
+  ["R7", "RUN", "Run not aborted (weather, safety, airspace, wind, angle, rain)", "Reason"],
+  ["R8", "RUN", "Data saved and checked after the run (SD cards, Betaflight length and speed)", "Folder"],
+  ["L1", "P1", "Planned route flown: straight-in and crossing passes", ""],
+  ["L2", "P1", "Every planned altitude flown (large drones 2–10 m, small under 1 m)", "Altitudes flown (m)"],
+  ["L3", "P1", "Formation and altitude held", ""],
+  ["L4", "P1", "GPS good through the phase", "Min satellites"],
+  ["D1", "P2", "Started at the planned distance (4–5 km from the radar)", "Start distance (m)"],
+  ["D2", "P2", "Planned route and altitude flown", ""],
+  ["D3", "P2", "All drones started together and kept their spacing", ""],
+  ["D4", "P2", "All drones finished the route", "Finished / started"],
+  ["A1", "P3", "Approach flown toward the target as planned", ""],
+  ["A2", "P3", "Stopped at the planned stand-off point (no contact)", "Closest distance (m)"],
+  ["A3", "P3", "Speed and timing as planned", "Speed (m/s)"],
+  ["A4", "P3", "All drones reached the end point", "Reached / started"],
+  ["H1", "P4", "Hover held over the target for the planned time", "Hover time (s)"],
+  ["H2", "P4", "Position stayed steady over the tarp (GPS check)", "Drift (m)"],
+];
+// [id, group, check, target hint, value label]
+const BLUE = [
+  ["B1", "RUN", "IRIS data covers the whole run, no gaps", "", "Gaps (s)"],
+  ["B2", "RUN", "IRIS clock matches UTC", "≤ s", "Offset (s)"],
+  ["BL1", "P1", "Low drone detected at each flown altitude", "", "Lowest detected altitude (m)"],
+  ["BL2", "P1", "Detected early enough", "≥ m", "First detection distance (m)"],
+  ["BL3", "P1", "Track held", "≤ s gap", "Breaks / longest gap (s)"],
+  ["BL4", "P1", "Classified as a drone", "≤ s", "Time to classify (s)"],
+  ["BL5", "P1", "If tracking failed, why: too low / too far / drones too close / not flying straight at the radar / weather", "", "Reason"],
+  ["BD1", "P2", "Detected early enough", "≥ m", "First detection distance (m)"],
+  ["BD2", "P2", "Position matched our GPS", "≤ m", "Distance / height error (m)"],
+  ["BD3", "P2", "Speed and direction shown correctly", "", "Speed error (m/s)"],
+  ["BD4", "P2", "Every drone got its own track", "", "Tracks / drones, time until all (s)"],
+  ["BD5", "P2", "No tracks merged or swapped between drones", "", "Merges / swaps"],
+  ["BD6", "P2", "Accuracy held at long range", "", "Error near / far (m)"],
+  ["BA1", "P3", "Alarm before the stand-off point", "≥ m", "Distance at first alarm (m)"],
+  ["BA2", "P3", "Quick from detection to alarm", "≤ s", "Detection → alarm (s)"],
+  ["BA3", "P3", "Track held until the end", "", "Breaks"],
+  ["BA4", "P3", "Each drone tracked separately", "", "Tracks / drones"],
+  ["BH1", "P4", "Track kept while hovering", "", "Lost for (s)"],
+  ["BH2", "P4", "Still classified as a drone while hovering; note if the data changed", "", "What changed"],
+];
+const GROUPS = [["RUN", "Run checks"], ...PHASES.map(([id, n]) => [id, id + " " + n])];
+const BLUE_INFO = [["iris_received", "IRIS data received (date, file names)"], ["iris_window", "Covers UTC from – to"], ["iris_reviewer", "Reviewer"]];
+
+let db = null, runsUnsub = null, docUnsub = null, current = null, state = null, local = false;
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const slug = s => s.trim().replace(/[^A-Za-z0-9_.~:@+-]+/g, "-").replace(/^[.]+|[.]+$/g, "").slice(0, 120);
+const blank = id => ({ run: { run_id: id }, phases: {}, items: {}, blue: {}, created_utc: new Date().toISOString() });
+
+function setSync(t) { $("sync").textContent = t; }
+
+// ---------- storage: shared db, or this device only when db is unavailable ----------
+function localRuns() { try { return JSON.parse(localStorage.getItem("icpi-runs") || "{}"); } catch (e) { return {}; } }
+function localSave(id, body) { try { const r = localRuns(); r[id] = body; localStorage.setItem("icpi-runs", JSON.stringify(r)); } catch (e) { setSync("Could not save on this device"); } }
+
+function listRuns(ids) {
+  const sel = $("run-select"), keep = current;
+  sel.innerHTML = `<option value="">Choose a run… (${ids.length})</option>` +
+    ids.map(id => `<option value="${esc(id)}"${id === keep ? " selected" : ""}>${esc(id)}</option>`).join("");
+}
+
+async function start() {
+  db = await (window.claude?.use ? window.claude.use("db") : Promise.resolve(null));
+  if (!db) {
+    local = true;
+    setSync("Saved on this device only");
+    listRuns(Object.keys(localRuns()).sort().reverse());
+    return;
+  }
+  setSync("Synced");
+  runsUnsub = db.collection("runs").onSnapshot(
+    snap => listRuns(snap.docs.map(d => d.id).sort().reverse()),
+    e => setSync("Sync stopped (" + e.code + ")"));
+}
+
+function openRun(id) {
+  current = id || null;
+  if (docUnsub) { docUnsub(); docUnsub = null; }
+  $("empty").hidden = !!id; $("card").hidden = !id;
+  if (!id) return;
+  if (local) { state = localRuns()[id] || blank(id); render(); return; }
+  docUnsub = db.doc("runs/" + id).onSnapshot(snap => {
+    if (!snap.exists) return;
+    const incoming = structuredClone(snap.data());
+    const typing = document.activeElement && $("card").contains(document.activeElement) && document.activeElement.tagName !== "BUTTON";
+    state = incoming;
+    if (!typing) render(); else summary();  // never replace a field someone is typing in
+  }, e => setSync("Sync stopped (" + e.code + ")"));
+}
+
+// writes: merge only the changed branch, one write at a time, coalesced while typing
+let pending = {}, timer = null, writing = false;
+function queue(patch) {
+  merge(pending, patch); merge(state, patch);
+  clearTimeout(timer); timer = setTimeout(flush, 500); setSync("Saving…"); summary();
+}
+function merge(a, b) { for (const k in b) { if (b[k] && typeof b[k] === "object" && !Array.isArray(b[k])) { a[k] ||= {}; merge(a[k], b[k]); } else a[k] = b[k]; } }
+async function flush() {
+  if (writing) { timer = setTimeout(flush, 300); return; }
+  const patch = pending; pending = {};
+  if (!Object.keys(patch).length) return;
+  if (local) { localSave(current, state); setSync("Saved on this device only"); return; }
+  writing = true;
+  try { await db.doc("runs/" + current).update({ ...patch, updated_utc: new Date().toISOString() }); setSync("Saved"); }
+  catch (e) { setSync(e.code === "invalid_argument" ? "You can view but not edit this card" : "Not saved (" + e.code + "), try again"); }
+  finally { writing = false; }
+}
+
+$("new-run-btn").onclick = () => { $("new-run").hidden = !$("new-run").hidden; if (!$("new-run").hidden) $("new-run-id").focus(); };
+$("create-run").onclick = async () => {
+  const id = slug($("new-run-id").value);
+  if (!id) { $("new-run-id").focus(); return; }
+  const body = blank($("new-run-id").value.trim());
+  if (local) localSave(id, body);
+  else {
+    const ex = await db.doc("runs/" + id).get();
+    if (!ex.exists) {
+      try { await db.doc("runs/" + id).set(body); }
+      catch (e) { setSync(e.code === "invalid_argument" ? "You can view but not create runs" : "Not created (" + e.code + ")"); return; }
+    }
+  }
+  $("new-run").hidden = true; $("new-run-id").value = "";
+  if (local) listRuns(Object.keys(localRuns()).sort().reverse());
+  $("run-select").value = id; openRun(id);
+};
+$("run-select").onchange = e => openRun(e.target.value);
+
+// ---------- rendering ----------
+const used = pid => (state.phases?.[pid]?.used || "");
+const seg = (id, team) => {
+  const r = state.items?.[id]?.result || "";
+  return `<div class="seg" role="group" aria-label="Result ${id}">${["Pass", "Fail", "N/A"].map(v =>
+    `<button data-res="${id}" data-v="${v}" class="${r === v ? "on" : ""}" aria-pressed="${r === v}">${v}</button>`).join("")}</div>`;
+};
+const inp = (path, val, ph = "") => `<input data-path="${path}" value="${esc(val)}" placeholder="${esc(ph)}">`;
+
+function tableRed(gid) {
+  const rows = RED.filter(r => r[1] === gid);
+  return `<div class="tbl"><table><tr><th>#</th><th>Check</th><th>Result</th><th>Value</th><th>Note / why</th></tr>${rows.map(([id, , q, vl]) => {
+    const it = state.items?.[id] || {};
+    return `<tr class="${gid !== "RUN" && used(gid) === "Not used" ? "off" : ""}"><td class="id">${id}</td><td class="q">${esc(q)}</td>
+      <td>${seg(id)}</td><td class="v">${vl ? `<small>${esc(vl)}</small>` : ""}${inp(`items.${id}.value`, it.value)}</td>
+      <td class="n">${inp(`items.${id}.note`, it.note)}</td></tr>`;
+  }).join("")}</table></div>`;
+}
+function tableBlue(gid) {
+  const rows = BLUE.filter(r => r[1] === gid);
+  return `<div class="tbl"><table><tr><th>#</th><th>Check</th><th>Target</th><th>Value</th><th>Result</th><th>Note / why</th></tr>${rows.map(([id, , q, th, vl]) => {
+    const it = state.items?.[id] || {};
+    return `<tr class="${gid !== "RUN" && used(gid) === "Not used" ? "off" : ""}"><td class="id">${id}</td><td class="q">${esc(q)}</td>
+      <td class="v">${inp(`items.${id}.target`, it.target, th)}</td>
+      <td class="v">${vl ? `<small>${esc(vl)}</small>` : ""}${inp(`items.${id}.value`, it.value)}</td>
+      <td>${seg(id)}</td><td class="n">${inp(`items.${id}.note`, it.note)}</td></tr>`;
+  }).join("")}</table></div>`;
+}
+
+function render() {
+  const s = state;
+  $("card").innerHTML = `
+    <h1>${esc(s.run?.run_id || current)}</h1>
+    <p class="lead">One long run, phases flown without landing: P1 Low flight → P2 Distance flight → P3 Approach (non-contact “strike”) → P4 Hover (optional). All times UTC.</p>
+    <ul class="howto lead">
+      <li><b>Pass</b> = done as planned / target met. <b>Fail</b> = not done or target missed; write why. <b>N/A</b> = does not apply; write why. Tap again to clear.</li>
+      <li>Score the Red team during and right after the run. Score the Blue team when the IRIS data arrives; write the target first.</li>
+      <li>A phase marked <b>Not used</b> makes its rows N/A. Every Blue <b>Fail</b> is a Red team win.</li>
+    </ul>
+
+    <h2>Run record</h2>
+    <div class="fields">${RUN_FIELDS.map(([k, l]) => `<label>${esc(l)}${inp("run." + k, s.run?.[k])}</label>`).join("")}</div>
+
+    <h2>Phase record</h2>
+    <div class="tbl"><table><tr><th>Phase</th><th>Used</th><th>Start UTC</th><th>End UTC</th><th>Mode</th><th>Events</th><th>Notes / why not used</th></tr>
+      ${PHASES.map(([pid, name]) => { const p = s.phases?.[pid] || {}; return `<tr><td class="q"><b>${pid}</b> ${esc(name)}</td>
+        <td><select data-path="phases.${pid}.used">${["", "Included", "Not used"].map(o => `<option${(p.used || "") === o ? " selected" : ""} value="${o}">${o || "–"}</option>`).join("")}</select></td>
+        <td class="v">${inp(`phases.${pid}.start`, p.start, "hh:mm:ss")}</td><td class="v">${inp(`phases.${pid}.end`, p.end, "hh:mm:ss")}</td>
+        <td class="v">${inp(`phases.${pid}.mode`, p.mode)}</td><td class="n">${inp(`phases.${pid}.events`, p.events)}</td>
+        <td class="n">${inp(`phases.${pid}.notes`, p.notes)}</td></tr>`; }).join("")}</table></div>
+
+    <h2 class="red">Red team scorecard (our drones)</h2>
+    <p class="lead">Did we fly what we planned, and is the data good?</p>
+    ${GROUPS.map(([gid, gname]) => `<h3>${esc(gname)}</h3>${tableRed(gid)}`).join("")}
+
+    <h2 class="blue">Blue team scorecard (Robin IRIS)</h2>
+    <p class="lead">Fill in when the IRIS data for this run arrives. Values from IRIS compared with our drone logs on the same UTC clock.</p>
+    <div class="fields">${BLUE_INFO.map(([k, l]) => `<label>${esc(l)}${inp("blue." + k, s.blue?.[k])}</label>`).join("")}</div>
+    ${GROUPS.map(([gid, gname]) => `<h3>${esc(gid === "RUN" ? "Data checks" : gname)}</h3>${tableBlue(gid)}`).join("")}
+
+    <h2>Score summary</h2>
+    <p class="lead">Score = Pass ÷ (Pass + Fail). N/A and empty rows are not counted.</p>
+    <div class="tbl"><table class="sum" id="sum"></table></div>
+    <div class="callout" id="redwins"></div>
+
+    <h2>Sign-off</h2>
+    <div class="fields">
+      <label>Red team reviewed by${inp("signoff.red_by", s.signoff?.red_by)}</label>
+      <label>Red date (UTC)${inp("signoff.red_date", s.signoff?.red_date)}</label>
+      <label>Blue team reviewed by${inp("signoff.blue_by", s.signoff?.blue_by)}</label>
+      <label>Blue date (UTC)${inp("signoff.blue_date", s.signoff?.blue_date)}</label>
+    </div>`;
+  summary();
+}
+
+function count(list, gid) {
+  const t = { Pass: 0, Fail: 0, "N/A": 0, open: 0 };
+  list.filter(r => r[1] === gid).forEach(([id, g]) => {
+    if (g !== "RUN" && used(g) === "Not used") { t["N/A"]++; return; }
+    const r = state.items?.[id]?.result; if (r) t[r]++; else t.open++;
+  });
+  return t;
+}
+function summary() {
+  if (!$("sum")) return;
+  const pct = t => (t.Pass + t.Fail) ? Math.round(100 * t.Pass / (t.Pass + t.Fail)) + " %" : "Not assessed";
+  const tot = { red: { Pass: 0, Fail: 0 }, blue: { Pass: 0, Fail: 0 } };
+  let h = `<tr><th>Part</th><th class="num">Red pass</th><th class="num">Red fail</th><th class="num">Red score</th><th class="num">Blue pass</th><th class="num">Blue fail</th><th class="num">Blue score</th></tr>`;
+  GROUPS.forEach(([gid, gname]) => {
+    const r = count(RED, gid), b = count(BLUE, gid);
+    tot.red.Pass += r.Pass; tot.red.Fail += r.Fail; tot.blue.Pass += b.Pass; tot.blue.Fail += b.Fail;
+    h += `<tr><td>${esc(gid === "RUN" ? "Run / data checks" : gname)}</td><td class="num">${r.Pass}</td><td class="num">${r.Fail}</td><td class="num">${pct(r)}</td>
+      <td class="num">${b.Pass}</td><td class="num">${b.Fail}</td><td class="num">${pct(b)}</td></tr>`;
+  });
+  h += `<tr><td><b>Whole run</b></td><td class="num">${tot.red.Pass}</td><td class="num">${tot.red.Fail}</td><td class="num"><b>${pct(tot.red)}</b></td>
+    <td class="num">${tot.blue.Pass}</td><td class="num">${tot.blue.Fail}</td><td class="num"><b>${pct(tot.blue)}</b></td></tr>`;
+  $("sum").innerHTML = h;
+  $("redwins").innerHTML = `<b>Red team wins from Blue fails: ${tot.blue.Fail}</b> (Blue rows marked Fail).`;
+}
+
+function pathPatch(path, value) {
+  const keys = path.split("."), patch = {}; let o = patch;
+  keys.forEach((k, i) => { if (i === keys.length - 1) o[k] = value; else o = o[k] = {}; });
+  return patch;
+}
+$("card").addEventListener("input", e => { const p = e.target.dataset?.path; if (p) queue(pathPatch(p, e.target.value)); });
+$("card").addEventListener("change", e => {
+  if (e.target.tagName === "SELECT" && e.target.dataset.path) { queue(pathPatch(e.target.dataset.path, e.target.value)); render(); }
+});
+$("card").addEventListener("click", e => {
+  const b = e.target.closest("button[data-res]"); if (!b) return;
+  const id = b.dataset.res, cur = state.items?.[id]?.result || "", v = cur === b.dataset.v ? "" : b.dataset.v;
+  queue({ items: { [id]: { result: v } } });
+  b.parentElement.querySelectorAll("button").forEach(x => { x.classList.toggle("on", x.dataset.v === v); x.setAttribute("aria-pressed", x.dataset.v === v); });
+});
+start();
+</script>
