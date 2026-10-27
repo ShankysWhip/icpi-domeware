@@ -29,7 +29,7 @@ def main(argv: list[str] | None = None) -> int:
         if name == "run":
             p.add_argument("--radius", type=float, default=3000.0, help="environment radius around the radar (m)")
             p.add_argument("--no-env", action="store_true", help="skip terrain/imagery download")
-    for name in ("convert", "replay", "verify", "info", "report"):
+    for name in ("convert", "replay", "verify", "info", "report", "view"):
         sub.add_parser(name).add_argument("session", type=Path)
     p = sub.add_parser("env")
     p.add_argument("session", type=Path)
@@ -91,6 +91,17 @@ def main(argv: list[str] | None = None) -> int:
         from domeware import report
 
         report.build(s)
+    if a.cmd == "view":
+        import subprocess
+
+        rrd = s.views / "replay.rrd"
+        if not rrd.exists():
+            raise SystemExit(f"No replay yet: run dw replay {a.session}")
+        exe = Path(sys.executable).with_name("rerun.exe" if sys.platform == "win32" else "rerun")
+        subprocess.run([str(exe), "analytics", "disable"], capture_output=True)
+        # loopback only: a viewer listening on all interfaces makes Windows create firewall block rules
+        subprocess.Popen([str(exe), "--bind", "127.0.0.1", "--port", "auto", str(rrd)])
+        print(f"opening {rrd}  (if Windows asks about the firewall, press Cancel)")
     if a.cmd == "verify":
         problems = s.verify()
         print("\n".join(problems) if problems else f"OK: {len(s.manifest['raw'])} raw files match their hashes")

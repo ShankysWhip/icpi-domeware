@@ -94,11 +94,61 @@ def compare_one(truth: pd.DataFrame, tracks: pd.DataFrame, gate_m: float, airbor
     }
 
 
+def planned_vs_flown(s: Session, airborne_m: float = 2.0, match_m: float = 30.0) -> list[dict]:
+    """Pair each planned Skybrush drone with the flown truth that took off nearest to its planned start, tie show
+    time to UTC by the take-off moment, and measure how far the flight was from the plan."""
+    plans = {f.stem: pd.read_parquet(f).dropna(subset=["e_m", "n_m", "u_m"]) for f in sorted(s.streams.glob("planned/*.parquet"))}
+    flown = {}
+    for f in truth_files(s):
+        d = pd.read_parquet(f).dropna(subset=["e_m", "n_m", "u_m"])
+        if len(d):
+            d["t_utc"] = pd.to_datetime(d["t_utc"], utc=True)
+            flown[f.stem] = d.sort_values("t_utc")
+    out, used = [], set()
+    for pname, p in plans.items():
+        p = p.sort_values("t_show_s")
+        if p.empty:
+            continue
+        p0 = p[["e_m", "n_m"]].iloc[0].to_numpy()
+        cands = sorted((float(np.hypot(*(d[["e_m", "n_m"]].iloc[0].to_numpy() - p0))), k) for k, d in flown.items() if k not in used)
+        if not cands or cands[0][0] > match_m:
+            out.append({"planned": pname, "flown": None, "note": f"no flown log took off within {match_m:.0f} m of the plan"})
+            continue
+        dist0, k = cands[0]
+        used.add(k)
+        d = flown[k]
+        p_air = p[p["h_rel_takeoff_m"] > airborne_m]
+        d_air = d[d["h_rel_takeoff_m"] > airborne_m]
+        if p_air.empty or d_air.empty:
+            continue
+        show_start = d_air["t_utc"].iloc[0] - pd.Timedelta(seconds=float(p_air["t_show_s"].iloc[0]))
+        ts = (d_air["t_utc"] - show_start).dt.total_seconds().to_numpy()
+        inside = (ts >= p["t_show_s"].iloc[0]) & (ts <= p["t_show_s"].iloc[-1])
+        plan_pos = np.column_stack([np.interp(ts[inside], p["t_show_s"], p[c]) for c in ("e_m", "n_m", "u_m")])
+        dev = d_air[["e_m", "n_m", "u_m"]].to_numpy()[inside] - plan_pos
+        dh, dv = np.hypot(dev[:, 0], dev[:, 1]), dev[:, 2]
+        out.append({"planned": pname, "flown": k, "start_distance_m": round(dist0, 1),
+                    "show_start_utc": str(show_start), "show_start_method": "aligned on take-off (first > 2 m)",
+                    "samples": int(inside.sum()),
+                    "deviation_horizontal_m": {"median": round(float(np.median(dh)), 1), "p90": round(float(np.percentile(dh, 90)), 1),
+                                               "max": round(float(dh.max()), 1)} if len(dh) else None,
+                    "deviation_vertical_m": {"median": round(float(np.median(dv)), 1), "max_abs": round(float(np.abs(dv).max()), 1)} if len(dv) else None})
+    return out
+
+
 def run(s: Session, gate_m: float = 50.0, airborne_m: float = 2.0) -> list[dict]:
     truths = truth_files(s)
     radars = [s.streams / n / "tracks.parquet" for n in s.manifest["streams"] if (s.streams / n / "tracks.parquet").exists()]
-    if not truths or not radars:
-        raise SystemExit(f"Need both drone truth ({len(truths)} found) and radar tracks ({len(radars)} found).")
+    if not truths:
+        raise SystemExit("No drone truth in the session (DJI .SRT, ArduPilot .bin, MAVLink .tlog or RTKLIB .pos).")
+    s.views.mkdir(parents=True, exist_ok=True)
+    pvf = planned_vs_flown(s, airborne_m) if any(s.streams.glob("planned/*.parquet")) else []
+    if pvf:
+        (s.views / "planned_vs_flown.json").write_text(json.dumps(pvf, indent=2, default=str), encoding="utf-8")
+        s.note(f"compare: planned vs flown for {sum(1 for r in pvf if r.get('flown'))}/{len(pvf)} planned drones")
+    if not radars:
+        s.save()
+        return pvf
     tracks = pd.concat([pd.read_parquet(p) for p in radars], ignore_index=True)
     tracks["t_utc"] = pd.to_datetime(tracks["t_utc"], utc=True)
     s.views.mkdir(parents=True, exist_ok=True)

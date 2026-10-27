@@ -276,6 +276,7 @@ def build(s: Session) -> dict:
 
     events: list[tuple[pd.Timestamp, str]] = []
     focus_ids = []
+    focus_track_df = None
     for name, info_s in s.manifest["streams"].items():
         tp = s.streams / name / "tracks.parquet"
         if not tp.exists():
@@ -302,6 +303,15 @@ def build(s: Session) -> dict:
             rec.send_columns(f"plots/range_m/{tid}", indexes=[t], columns=rr.Scalars.columns(scalars=g["range_m"].to_numpy()))
             rec.send_columns(f"plots/height_above_radar_ground_m/{tid}", indexes=[t],
                              columns=rr.Scalars.columns(scalars=g["h_above_site_ground_m"].to_numpy()))
+            if tid == focus:  # how the radar judged the drone over time
+                for col, lane in (("class_code", "class (0 uncl .. 4 DRONE)"), ("score", "score"),
+                                  ("median_rcs_dbsm", "median RCS (dBsm)")):
+                    if col in g:
+                        rec.send_columns(f"focus/{lane}", indexes=[t],
+                                         columns=rr.Scalars.columns(scalars=pd.to_numeric(g[col], errors="coerce").to_numpy(np.float64)))
+                rec.send_columns("focus/alarm (0/1)", indexes=[t],
+                                 columns=rr.Scalars.columns(scalars=g["alarm"].fillna(False).astype(float).to_numpy()))
+                focus_track_df = g
         stats[f"{name}_tracks"] = int(tr["track_id"].nunique())
         pp = s.streams / name / "plots.parquet"
         if pp.exists():
@@ -323,6 +333,19 @@ def build(s: Session) -> dict:
         rec.log(f"world/truth/{f.stem}", rr.Points3D.from_fields(colors=[[0, 230, 90]], radii=2.5), static=True)
         rec.log(f"world/truth/{f.stem}_path", rr.LineStrips3D([pos], colors=[[0, 200, 80]], radii=0.4), static=True)
         stats[f"truth_{f.stem}_frames"] = len(d)
+        if focus_track_df is not None:  # error vector: radar track state -> true drone position at the same instant
+            from domeware.compare import _interp_truth
+
+            g = focus_track_df
+            tp = _interp_truth(d, g["t_utc"])
+            tk = g[["e_m", "n_m", "u_m"]].to_numpy()
+            err = np.linalg.norm(tk - tp, axis=1)
+            ok = np.isfinite(err) & (err < 200)  # beyond 200 m it is not this drone; no misleading lines
+            for ts, a, b, e_h in zip(g["t_utc"][ok], tk[ok], tp[ok], np.hypot(*(tk - tp)[ok][:, :2].T)):
+                rec.set_time("utc", timestamp=ts.to_datetime64())
+                rec.log(f"world/error/{f.stem}", rr.LineStrips3D([[a, b]], colors=[[255, 60, 200]], radii=0.6))
+                rec.log(f"focus/horizontal error vs {f.stem} (m)", rr.Scalars(float(e_h)))
+            stats[f"error_vectors_{f.stem}"] = int(ok.sum())
 
     wx = s.streams / "weather" / "fmi_nearest.parquet"
     weather_cols = []
@@ -358,6 +381,7 @@ def build(s: Session) -> dict:
                             rrb.TimeSeriesView(name="Temp (C) / visibility (m), FMI", origin="/weather",
                                                contents=["/weather/temp_c", "/weather/visibility_m"])]
                            if weather_cols else []),
+                         rrb.TimeSeriesView(name="Focus track: radar's judgement & error", origin="/focus"),
                          rrb.TextLogView(name="Events", origin="/events")),
             column_shares=[3, 1]),
         rrb.TimePanel(timeline="utc", state="expanded"), collapse_panels=True)

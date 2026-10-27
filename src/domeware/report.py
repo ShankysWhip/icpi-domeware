@@ -61,6 +61,17 @@ def build(s: Session) -> str:
     else:
         md += ["No drone truth in this session yet (DJI .SRT captions, ArduPilot .bin or RTKLIB .pos).", ""]
 
+    pvf_p = v / "planned_vs_flown.json"
+    if pvf_p.exists():
+        pvf = json.loads(pvf_p.read_text(encoding="utf-8"))
+        md += ["## Planned vs flown (Skybrush)", "",
+               _tbl([[r["planned"], r.get("flown"), (r.get("deviation_horizontal_m") or {}).get("median"),
+                      (r.get("deviation_horizontal_m") or {}).get("p90"), (r.get("deviation_horizontal_m") or {}).get("max"),
+                      (r.get("deviation_vertical_m") or {}).get("median"), r.get("note", "")] for r in pvf],
+                    ["planned", "flown log", "horiz. median m", "p90 m", "max m", "vert. median m", "note"]),
+               "", "Show time is tied to UTC at take-off (first moment above 2 m). Axis convention of the show file is "
+               "ASSUMED until verified on a real show.", ""]
+
     wx = s.streams / "weather" / "fmi_nearest.parquet"
     if wx.exists() and cmp_:
         w = pd.read_parquet(wx)
