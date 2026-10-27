@@ -41,7 +41,8 @@ If a Windows Firewall prompt appears anyway, press **Cancel**.
 | DJI video captions `.SRT` (turn on "Video Captions" in DJI Fly) | converted as drone truth; local time → UTC, DST-aware |
 | ArduPilot `.bin` | converted as drone truth (GPS week/ms − 18 s leap) |
 | RTKLIB `.pos` (RTK truth) | converted as drone truth; GPST → UTC, ellipsoid → N2000 (fails loudly without the geoid grid) |
-| MAVLink `.tlog` | stored raw; converter next |
+| MAVLink `.tlog` (ground-station log) | converted as drone truth, **one stream per vehicle (sysid)**; time from each vehicle's SYSTEM_TIME |
+| Skybrush show `.skyc` | **planned** trajectories per drone, shown as white lines (show time; axis convention ASSUMED until verified) |
 
 ## Environment, weather and line of sight (automatic in `dw run`, or `dw env`)
 
