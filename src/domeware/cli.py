@@ -59,8 +59,12 @@ def main(argv: list[str] | None = None) -> int:
 
             convert.convert_truth(s)
             s.save()
-        from domeware import weather
+        from domeware import features, weather
 
+        try:
+            features.fetch(s)
+        except Exception as e:  # realism layers are optional; the run continues without them
+            s.note(f"features: not fetched ({e})")
         try:
             weather.fetch(s)
         except Exception as e:  # weather is context; a failed fetch must not stop the run

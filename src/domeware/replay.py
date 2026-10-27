@@ -101,6 +101,74 @@ def terrain_glb(s: Session, site: dict, max_grid: int = 700, max_tex: int = 4096
     return mesh.export(file_type="glb", include_normals=True), info
 
 
+def _dem_lookup(s: Session, align_m: float):
+    """Vectorised ground height (radar frame) at TM35 x, y from env/dem.tif (nearest cell)."""
+    with rasterio.open(s.env / "dem.tif") as src:
+        z, b, (rx, ry) = src.read(1).astype(np.float64), src.bounds, src.res
+        z[z == src.nodata] = np.nan
+    z = np.where(np.isfinite(z), z, np.nanmedian(z)) + align_m
+
+    def f(x, y):
+        c = np.clip(((np.asarray(x) - b.left) / rx).astype(int), 0, z.shape[1] - 1)
+        r = np.clip(((b.top - np.asarray(y)) / ry).astype(int), 0, z.shape[0] - 1)
+        return z[r, c]
+
+    return f
+
+
+def _tm_to_enu(x, y, h, site):
+    lon, lat = TM35_TO_LL.transform(np.asarray(x, float), np.asarray(y, float))
+    e, n, u = enu(lat, lon, h, site["lat_deg"], site["lon_deg"], site["alt_m"])
+    return np.column_stack([e, n, u]).astype(np.float32)
+
+
+def log_features(rec, s: Session, site: dict, stats: dict) -> None:
+    """Buildings (extruded), power lines and tree tops from env/features.gpkg + env/canopy.tif."""
+    if not (s.env / "dem.tif").exists():
+        return
+    import geopandas as gpd
+
+    from domeware.convert import terrain_alignment_m
+    from domeware.features import canopy_points
+
+    ground = _dem_lookup(s, terrain_alignment_m(s))
+    fg = s.env / "features.gpkg"
+    layers = {n for n, _ in __import__("pyogrio").list_layers(fg)} if fg.exists() else set()
+    if "buildings" in layers:
+        meshes = []
+        for geom, h in zip(*(lambda g: (g.geometry, g["height_m"]))(gpd.read_file(fg, layer="buildings").explode(index_parts=False))):
+            if geom.is_empty or geom.area < 4:
+                continue
+            m = trimesh.creation.extrude_polygon(geom, float(h))
+            base = float(ground([geom.centroid.x], [geom.centroid.y])[0])
+            m.vertices = _tm_to_enu(m.vertices[:, 0], m.vertices[:, 1], m.vertices[:, 2] + base, site)
+            meshes.append(m)
+        if meshes:
+            allm = trimesh.util.concatenate(meshes)
+            rec.log("world/buildings", rr.Mesh3D(vertex_positions=allm.vertices.astype(np.float32),
+                                                 triangle_indices=allm.faces.astype(np.uint32),
+                                                 vertex_normals=allm.vertex_normals.astype(np.float32),
+                                                 albedo_factor=[215, 205, 190, 255]), static=True)
+            stats["buildings"] = len(meshes)
+    if "power_lines" in layers:
+        strips = []
+        for geom, h in zip(*(lambda g: (g.geometry, g["height_m"]))(gpd.read_file(fg, layer="power_lines").explode(index_parts=False))):
+            seg = geom.segmentize(25.0)  # follow the terrain between mapped vertices
+            xy = np.asarray(seg.coords)[:, :2]
+            strips.append(_tm_to_enu(xy[:, 0], xy[:, 1], ground(xy[:, 0], xy[:, 1]) + float(h), site))
+        if strips:
+            rec.log("world/power_lines", rr.LineStrips3D(strips, colors=[[250, 220, 60]], radii=0.5), static=True)
+            stats["power_line_strips"] = len(strips)
+    pts = canopy_points(s)
+    if pts is not None and len(pts[0]):
+        x, y, h = pts
+        pos = _tm_to_enu(x, y, ground(x, y) + h, site)
+        t = np.clip(h / 30.0, 0, 1)[:, None]
+        colors = (np.array([[110, 160, 70]]) * (1 - t) + np.array([[25, 75, 35]]) * t).astype(np.uint8)
+        rec.log("world/trees", rr.Points3D(pos, colors=colors, radii=2.2), static=True)
+        stats["tree_points"] = int(len(pos))
+
+
 def truth_files(s: Session) -> list[Path]:
     """Every drone-position stream: streams/truth/*.parquet (SRT, ArduPilot) and streams/dji/*_osd.parquet."""
     return sorted(s.streams.glob("truth/*.parquet")) + sorted(s.streams.glob("dji/*_osd.parquet"))
@@ -139,6 +207,7 @@ def build(s: Session) -> dict:
     stats.update(info)
     if glb is not None:
         rec.log("world/terrain", rr.Asset3D(contents=glb, media_type="model/gltf-binary"), static=True)
+    log_features(rec, s, site, stats)
 
     ground_z = (site["ground_level_m"] - site["alt_m"]) if site.get("ground_level_m") else 0.0
     rec.log("world/radar", rr.Points3D([[0, 0, 0]], colors=[[255, 120, 0]], radii=4.0,
