@@ -36,6 +36,22 @@ uv run rerun --bind 127.0.0.1 --port auto C:\Users\nikla_68b56qz\Work\domeware-d
 
 The numbers are in `C:\Users\nikla_68b56qz\Work\domeware-data\sessions\2026-10-28_pilot\views\compare.md`.
 
+## Scorecards
+
+1. In the field, fill the run on the **Run Scorecards v2** page (the *Now* buttons write UTC phase times).
+2. After the run, press **Export JSON** on the page and save the file into the pilot folder.
+3. Give domeware the phase times, then the values:
+
+```powershell
+uv run dw runs C:\Users\nikla_68b56qz\Work\domeware-data\sessions\2026-10-28_pilot --card <the exported file>.json
+```
+```powershell
+uv run dw scorecard C:\Users\nikla_68b56qz\Work\domeware-data\sessions\2026-10-28_pilot
+```
+
+4. On the page, press **Import domeware values** and pick `views\scorecard_<run>.json`. Check each value, then set
+   Pass / Fail.
+
 ## If something goes wrong
 
 - **More files arrive later:** run the same `dw run` command again. Files already in the session are skipped.

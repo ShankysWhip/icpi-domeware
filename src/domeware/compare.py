@@ -38,6 +38,22 @@ def _secs(a, b) -> float | None:
     return None if a is None or b is None else round((b - a).total_seconds(), 2)
 
 
+def assign_tracks(truths: dict[str, pd.DataFrame], tracks: pd.DataFrame, gate_m: float) -> dict[int, str]:
+    """Each radar track belongs to at most one drone: the one with the smallest median 3D distance, if under the gate.
+    Without this, two drones flying close together would both claim the same track."""
+    best: dict[int, tuple[float, str]] = {}
+    xyz = tracks[["e_m", "n_m", "u_m"]].to_numpy()
+    for name, truth in truths.items():
+        truth = truth.dropna(subset=["e_m", "n_m", "u_m"]).sort_values("t_utc")
+        if truth.empty:
+            continue
+        err = pd.Series(np.linalg.norm(xyz - _interp_truth(truth, tracks["t_utc"]), axis=1), index=tracks.index)
+        for tid, med in err.groupby(tracks["track_id"]).median().items():
+            if med < gate_m and med < best.get(int(tid), (np.inf, ""))[0]:
+                best[int(tid)] = (float(med), name)
+    return {tid: name for tid, (_, name) in best.items()}
+
+
 def compare_one(truth: pd.DataFrame, tracks: pd.DataFrame, gate_m: float, airborne_m: float) -> dict:
     truth = truth.dropna(subset=["e_m", "n_m", "u_m"]).sort_values("t_utc")
     if truth.empty:
@@ -155,13 +171,20 @@ def run(s: Session, gate_m: float = 50.0, airborne_m: float = 2.0) -> list[dict]
     results, md = [], [f"# Radar vs drone truth\n\nGate {gate_m:.0f} m (median 3D distance per track), airborne = height above "
                        f"take-off > {airborne_m:.0f} m. Horizontal error is the primary figure; vertical depends on the radar's "
                        f"altitude datum (unverified).\n"]
+    loaded = {}
     for f in truths:
         tr = pd.read_parquet(f)
         tr["t_utc"] = pd.to_datetime(tr["t_utc"], utc=True)
         if "h_rel_takeoff_m" not in tr and "height_rel_takeoff_m" in tr:
             tr["h_rel_takeoff_m"] = tr["height_rel_takeoff_m"]
-        r = compare_one(tr, tracks, gate_m, airborne_m)
+        loaded[f] = tr
+    owner = assign_tracks({f.stem: d for f, d in loaded.items()}, tracks, gate_m)
+    for f, tr in loaded.items():
+        mine = [t for t, n in owner.items() if n == f.stem]
+        r = compare_one(tr, tracks[tracks["track_id"].isin(mine)], gate_m, airborne_m)
         on, truth = r.pop("_on"), r.pop("_truth")
+        flying = tracks[(tracks["t_utc"] >= pd.Timestamp(r["airborne_utc"])) & (tracks["t_utc"] <= pd.Timestamp(r["landed_utc"]))]
+        r["other_tracks_during_flight"] = len(set(flying["track_id"]) - set(owner))  # none of our drones
         r["truth"] = f.name
         results.append(r)
         md.append(f"## {f.stem}\n")

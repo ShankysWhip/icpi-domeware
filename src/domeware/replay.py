@@ -360,6 +360,15 @@ def build(s: Session) -> dict:
                     weather_cols.append(col)
             stats["weather_lanes"] = weather_cols
 
+    de = s.streams / "events" / "drone_events.parquet"
+    if de.exists():  # drone side: take-offs, landings, modes, failsafes
+        events += [(pd.Timestamp(r.t_utc), f"{r.drone}: {r.kind} {r.detail}") for r in pd.read_parquet(de).itertuples()]
+    if (s.root / "runs.csv").exists():
+        from domeware import runs as R
+
+        for r in R.load(s).itertuples():
+            events += [(r.start_utc, f"{r.run_id} {r.part} start"), (r.end_utc, f"{r.run_id} {r.part} end")]
+    events.sort(key=lambda e: e[0])
     for ts, msg in events:
         rec.set_time("utc", timestamp=ts.to_datetime64())
         rec.log("events", rr.TextLog(msg))

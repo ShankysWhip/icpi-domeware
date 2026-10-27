@@ -61,6 +61,27 @@ def build(s: Session) -> str:
     else:
         md += ["No drone truth in this session yet (DJI .SRT captions, ArduPilot .bin or RTKLIB .pos).", ""]
 
+    if (s.root / "runs.csv").exists():
+        from domeware import runs as R
+
+        rd = R.load(s)
+        md += ["## Runs and phases", "", _tbl([[r.run_id, r.part, f"{r.start_utc:%H:%M:%S}", f"{r.end_utc:%H:%M:%S}",
+                                               int((r.end_utc - r.start_utc).total_seconds()), r.notes] for r in rd.itertuples()],
+                                             ["run", "part", "start UTC", "end UTC", "s", "from"]),
+               "", "Edit `runs.csv` by hand, or add phase times from a scorecard export: `dw runs <session> --card <file>.json`.", ""]
+    de = s.streams / "events" / "drone_events.parquet"
+    if de.exists():
+        d = pd.read_parquet(de)
+        md += ["## Drone events", "", _tbl([[f"{r.t_utc:%H:%M:%S}", r.drone, r.kind, r.detail] for r in d.itertuples()][:60],
+                                           ["UTC", "drone", "event", "detail"]), ""]
+        if len(d) > 60:
+            md += [f"First 60 of {len(d)} events; all are in `streams/events/drone_events.parquet` and the replay's Events panel.", ""]
+    for p in sorted(v.glob("scorecard_*.json")):
+        c = json.loads(p.read_text(encoding="utf-8"))
+        md += [f"## Scorecard values: {c['run_id']}", "",
+               _tbl([[k, x["value"], x["note"]] for k, x in c["items"].items()], ["check", "value", "how measured"]), "",
+               f"Import `{p.name}` on the Run Scorecards page (Import domeware values). Results stay with the reviewers.", ""]
+
     pvf_p = v / "planned_vs_flown.json"
     if pvf_p.exists():
         pvf = json.loads(pvf_p.read_text(encoding="utf-8"))

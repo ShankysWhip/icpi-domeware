@@ -73,6 +73,28 @@ When drone truth exists, `dw run` also runs `dw compare` and writes `views/compa
 - **Other tracks:** how many other tracks appeared during the flight.
 
 Rule: a radar track is the drone if its median 3D distance to truth is under the gate (`--gate`, default 50 m).
+With several drones, each track belongs to one drone only: the nearest one.
+
+## Runs, drone events and scorecards
+
+- **`dw runs <session>`** writes `runs.csv` (run id, part, start and end UTC) from the drones' take-offs and landings.
+  Edit it freely; it is never overwritten. Phase times (P1-P4) come from a hand edit or from a scorecard export:
+  `dw runs <session> --card <export>.json` (Run Scorecards v2 page, *Export JSON*).
+- **`dw events <session>`** puts drone events on the UTC clock: take-off, landing, log gaps, weak GPS, and from
+  ArduPilot `.bin` / MAVLink `.tlog` the flight-mode changes, arm/disarm, failsafes and warnings. They show in the
+  replay's Events panel and in the report.
+- **`dw scorecard <session>`** measures the Blue (radar) and Red (drone) checks per run and phase and writes
+  `views/scorecard_<run>.json`. On the Run Scorecards v2 page, *Import domeware values* fills the empty Value and
+  Note fields; reviewers still set Pass / Fail. Phase checks are filled only from real phase times. A per-second table
+  of which radar track was which drone is in `views/association_<run>.parquet`.
+
+All three run inside `dw run` when drone truth exists.
+
+## Team
+
+- **`dw list`** shows every session in one table and writes `domeware-data/sessions/index.html`.
+- **`dw doctor`** checks a laptop: Python, packages, height grids, leap-second table, viewer. It prints a fix for
+  anything missing and changes nothing. New co-worker: `git clone`, `uv sync`, `uv run dw doctor`.
 
 ## Rules
 

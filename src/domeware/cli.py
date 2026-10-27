@@ -5,8 +5,16 @@
   dw convert SESSION          convert every known file type to Parquet
   dw env SESSION              fetch real terrain + orthophoto around the site (Finland, no key needed)
   dw replay SESSION           build views/replay.rrd + quicklook images
+  dw compare SESSION          radar tracks vs drone truth: delays, errors, coverage
+  dw events SESSION           drone events (take-off, landing, modes, failsafes) on the UTC clock
+  dw runs SESSION             runs.csv: runs from take-offs/landings; --card FILE adds phase times from a scorecard
+  dw scorecard SESSION        Blue/Red scorecard values per run and phase (import them on the Run Scorecards page)
+  dw report SESSION           views/report.md
+  dw view SESSION             open the replay (loopback only)
   dw verify SESSION           check raw files against their hashes
   dw info SESSION             show what is in the session
+  dw list [ROOT]              all sessions in one table (+ ROOT/index.html)
+  dw doctor                   check this laptop has everything domeware needs
 """
 
 from __future__ import annotations
@@ -29,8 +37,17 @@ def main(argv: list[str] | None = None) -> int:
         if name == "run":
             p.add_argument("--radius", type=float, default=3000.0, help="environment radius around the radar (m)")
             p.add_argument("--no-env", action="store_true", help="skip terrain/imagery download")
-    for name in ("convert", "replay", "verify", "info", "report", "view"):
+    for name in ("convert", "replay", "verify", "info", "report", "view", "events"):
         sub.add_parser(name).add_argument("session", type=Path)
+    p = sub.add_parser("runs", help="runs.csv: runs and phase windows")
+    p.add_argument("session", type=Path)
+    p.add_argument("--card", type=Path, help="phase times from a Run Scorecards export (JSON)")
+    p = sub.add_parser("scorecard", help="scorecard values per run and phase")
+    p.add_argument("session", type=Path)
+    p.add_argument("--run", help="only this run id")
+    p.add_argument("--gate", type=float, default=50.0)
+    sub.add_parser("list", help="all sessions in one table").add_argument("root", type=Path, nargs="?")
+    sub.add_parser("doctor", help="check this laptop")
     p = sub.add_parser("env")
     p.add_argument("session", type=Path)
     p.add_argument("--radius", type=float, default=3000.0)
@@ -38,6 +55,17 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("session", type=Path)
     p.add_argument("--gate", type=float, default=50.0, help="association gate, metres (median 3D distance)")
     a = ap.parse_args(argv)
+    if a.cmd == "doctor":
+        from domeware.overview import doctor
+
+        return doctor()
+    if a.cmd == "list":
+        from domeware.overview import DEFAULT_ROOT, list_sessions
+
+        df = list_sessions(a.root or DEFAULT_ROOT)
+        print(df.to_string(index=False) if len(df) else "no sessions")
+        print(f"index: {(a.root or DEFAULT_ROOT) / 'index.html'}")
+        return 0
     s = Session(a.session)
 
     if a.cmd in ("run", "ingest"):
@@ -76,6 +104,17 @@ def main(argv: list[str] | None = None) -> int:
             weather.fetch(s)
         except Exception as e:  # weather is context; a failed fetch must not stop the run
             s.note(f"weather: not fetched ({e})")
+    has_truth = a.cmd in ("run", "events", "runs", "scorecard") and (any(s.streams.glob("truth/*.parquet")) or any(s.streams.glob("dji/*_osd.parquet")))
+    if a.cmd == "events" or (a.cmd == "run" and has_truth):
+        from domeware import events
+
+        events.build(s)
+    if a.cmd == "runs" or (a.cmd == "run" and has_truth):
+        from domeware import runs
+
+        df = runs.import_card(s, a.card) if getattr(a, "card", None) else runs.ensure(s)
+        if a.cmd == "runs":
+            print(df.to_string(index=False) if len(df) else "no runs: no drone was airborne in the truth logs")
     if a.cmd in ("run", "replay"):
         from domeware import replay
 
@@ -87,6 +126,11 @@ def main(argv: list[str] | None = None) -> int:
 
         for r in compare.run(s, gate_m=getattr(a, "gate", 50.0)):
             print(json.dumps({k: v for k, v in r.items() if not k.startswith("error_")}, indent=1, default=str))
+    if a.cmd == "scorecard" or (a.cmd == "run" and has_truth):
+        from domeware import scorecard
+
+        for c in scorecard.run(s, gate_m=getattr(a, "gate", 50.0), only=getattr(a, "run", None)):
+            print(f"  {c['run_id']}: {len(c['items'])} values -> views/scorecard_{c['run_id']}.json")
     if a.cmd in ("run", "report"):
         from domeware import report
 
