@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ICPI Run Scorecard</title>
+<style>
+  :root { --bg:#f6f7f8; --card:#fff; --ink:#15191e; --ink2:#5b6470; --line:#dfe3e8; --red:#c62f2f; --blue:#1f5fbf;
+          --pass:#1e8a4c; --fail:#c62f2f; --na:#7a828c; --accent:#e8eef7; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#121417; --card:#1b1f24; --ink:#e9edf1;
+          --ink2:#9aa4af; --line:#2c333b; --accent:#1e2a3a; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { position:sticky; top:0; z-index:5; background:var(--card); border-bottom:1px solid var(--line); padding:10px 16px;
+           display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  header h1 { font-size:17px; margin:0 12px 0 0; }
+  button, .btn { font:inherit; border:1px solid var(--line); background:var(--card); color:var(--ink); border-radius:8px;
+           padding:7px 12px; cursor:pointer; }
+  button:hover { border-color:var(--ink2); }
+  main { max-width:1100px; margin:0 auto; padding:16px; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin:0 0 16px; }
+  h2 { margin:0 0 4px; font-size:19px; } h3 { margin:16px 0 6px; font-size:16px; }
+  .sub { color:var(--ink2); margin:0 0 10px; }
+  .team-red h2 { color:var(--red); } .team-blue h2 { color:var(--blue); }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:8px 12px; }
+  label.f { display:flex; flex-direction:column; font-size:13px; color:var(--ink2); }
+  input, select, textarea { font:inherit; color:var(--ink); background:var(--bg); border:1px solid var(--line); border-radius:6px;
+           padding:6px 8px; margin-top:3px; width:100%; }
+  .phase { border-top:1px solid var(--line); margin-top:14px; padding-top:10px; }
+  .phase-head { display:flex; flex-wrap:wrap; gap:8px 14px; align-items:end; }
+  .phase-head h3 { margin:0; min-width:220px; }
+  .phase.off .item { opacity:.45; }
+  .item { display:grid; grid-template-columns: 52px 1fr auto; gap:6px 12px; padding:9px 0; border-bottom:1px dashed var(--line); }
+  .item:last-child { border-bottom:0; }
+  .iid { font-weight:600; color:var(--ink2); font-size:13px; padding-top:3px; }
+  .q { font-weight:500; } .help { color:var(--ink2); font-size:13px; }
+  .redwin { font-size:12px; color:var(--red); }
+  .extra { grid-column:2 / 4; display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:6px 10px; }
+  .pf { display:flex; gap:4px; align-items:start; }
+  .pf button { min-width:58px; padding:6px 8px; }
+  .pf button.on[data-v="pass"] { background:var(--pass); color:#fff; border-color:var(--pass); }
+  .pf button.on[data-v="fail"] { background:var(--fail); color:#fff; border-color:var(--fail); }
+  .pf button.on[data-v="na"]   { background:var(--na);   color:#fff; border-color:var(--na); }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); }
+  th { color:var(--ink2); font-weight:600; }
+  td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
+  .score { font-weight:700; }
+  .note-box { background:var(--accent); border-radius:8px; padding:8px 12px; font-size:13px; }
+  .rules li { margin:3px 0; }
+  @media (max-width:640px) { .item { grid-template-columns:40px 1fr; } .pf { grid-column:1 / 3; } .extra { grid-column:1 / 3; } }
+  @media print {
+    :root { --bg:#fff; --card:#fff; --ink:#000; --ink2:#444; --line:#bbb; --accent:#f1f1f1; }
+    header { position:static; } header button, header input[type=file] { display:none; }
+    section { break-inside:avoid-page; border:0; padding:0; } .phase { break-inside:avoid; }
+    .pf button:not(.on) { border-style:dotted; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>ICPI · Phased run scorecard</h1>
+  <button id="b-save">Save file (JSON)</button>
+  <button id="b-csv">Export CSV</button>
+  <label class="btn">Open file <input id="f-open" type="file" accept=".json" hidden></label>
+  <button id="b-print">Print / PDF</button>
+  <button id="b-new">New run</button>
+  <span id="saved" class="sub" style="margin:0 0 0 auto"></span>
+</header>
+<main>
+  <section>
+    <h2>Run</h2>
+    <p class="sub">One long run = one Run ID. Phases P1–P4 happen inside it without landing. All times in UTC (YYYY-MM-DD hh:mm:ss).</p>
+    <div class="grid" id="run-fields"></div>
+  </section>
+
+  <section>
+    <h2>Scores</h2>
+    <p class="sub">Score = Pass ÷ (Pass + Fail). N/A and open items are not counted; open items are shown so nothing looks finished when it isn't.
+      Red and Blue are scored separately. Every Blue <b>Fail</b> is also a Red team win.</p>
+    <table id="summary"></table>
+  </section>
+
+  <section class="team-red">
+    <h2>Red team · our drones</h2>
+    <p class="sub">Fill in during and right after the run. "Did we fly what we planned, and is the data good?"</p>
+    <div id="red"></div>
+  </section>
+
+  <section class="team-blue">
+    <h2>Blue team · Robin IRIS</h2>
+    <p class="sub">Fill in later, when the IRIS data for this run has been received. Values come from IRIS data compared with our drone logs (domeware).
+      Set the target before scoring, so Pass/Fail is not decided afterwards.</p>
+    <div class="grid" id="blue-fields"></div>
+    <div id="blue"></div>
+  </section>
+
+  <section>
+    <h2>Rules</h2>
+    <ul class="rules">
+      <li><b>Pass</b>: done as planned / the target was met. <b>Fail</b>: not done or target missed, write why. <b>N/A</b>: does not apply to this run, write why.</li>
+      <li>A phase set to <b>Not used</b> makes all its items N/A. Not used is neutral: it is not a failure.</li>
+      <li>Phases share one Run ID. Phase start/end must be inside the run and must not overlap.</li>
+      <li>Always a no-drone pause before and after each run, so IRIS data can be cut cleanly.</li>
+      <li>Approach (P3) is non-contact: the drones stop at the planned stand-off point. No payload, no contact.</li>
+      <li>Blue team values compare IRIS against our GPS logs on the same UTC clock. Write the source file for every value.</li>
+    </ul>
+  </section>
+</main>
+
+<script>
+const PHASES = [
+  { id: "RUN", name: "Run checks" },
+  { id: "P1", name: "P1 · Low flight" },
+  { id: "P2", name: "P2 · Distance flight" },
+  { id: "P3", name: "P3 · Approach (non-contact \"strike\")" },
+  { id: "P4", name: "P4 · Hover (optional)" },
+];
+
+const RUN_FIELDS = [
+  ["run_id", "Run ID"], ["date", "Date (UTC)"], ["site", "Site"], ["plan_start", "Planned start UTC"],
+  ["start", "Actual start UTC"], ["end", "Actual end UTC"], ["pilots", "Pilots / operators"], ["observer", "Observer"],
+  ["drones", "Drones (IDs + models)"], ["n_drones", "Number of drones"], ["mode", "Mode (manual / autonomous / mixed)"],
+  ["markers", "Ground markers (tarps) at 500 m / 1 km / 2 km"], ["weather", "Weather (Vaisala) at start: wind, temp, rain"],
+  ["notes", "Notes"],
+];
+
+const BLUE_FIELDS = [["iris_received", "IRIS data received (date, file)"], ["iris_window", "IRIS covers UTC from–to"],
+  ["iris_offset", "IRIS clock vs UTC (s)"], ["reviewer", "Blue reviewer"]];
+
+// [id, phase, question, help, extra fields]  extras: [key, label]
+const RED = [
+  ["R1", "RUN", "Run started at the planned time", "Within the planned minute. Late starts make cutting IRIS data harder.", [["delay", "Delay (s)"]]],
+  ["R2", "RUN", "No-drone pause before and after the run", "No drone in the air between runs.", []],
+  ["R3", "RUN", "All clocks on UTC and checked", "Drones, laptop, weather station. Write the measured offset.", [["offset", "Max offset (s)"]]],
+  ["R4", "RUN", "Weather recorded for the run", "Vaisala values written down at start and end.", []],
+  ["R5", "RUN", "Battery level and temperature recorded", "At take-off and landing for each drone. Cold drains batteries.", []],
+  ["R6", "RUN", "No technical failure", "Fail if battery, lost link, crash or other fault. Write which.", [["what", "What failed"]]],
+  ["R7", "RUN", "Run not aborted", "Fail if aborted for weather, safety, airspace, wind, angle or rain. Write why.", [["why", "Abort reason"]]],
+  ["R8", "RUN", "Data saved and checked after the run", "SD cards copied, files open, flight length and speed look right (Betaflight).", [["files", "Files / folder"]]],
+
+  ["L1", "P1", "Planned low route flown", "Both straight-in and crossing passes, as planned.", []],
+  ["L2", "P1", "Every planned altitude flown", "Large drones 2–10 m, small under 1 m, plus altitudes chosen for the radar's setting.", [["alts", "Altitudes flown (m)"]]],
+  ["L3", "P1", "Formation and altitude held", "Drones kept the planned altitude and spacing.", []],
+  ["L4", "P1", "GPS good during the phase", "Enough satellites all the time.", [["sats", "Min satellites"]]],
+
+  ["D1", "P2", "Started at the planned distance", "For example 4–5 km from the radar.", [["dist", "Start distance (m)"]]],
+  ["D2", "P2", "Planned route and altitude flown", "", []],
+  ["D3", "P2", "All drones started together and kept spacing", "", []],
+  ["D4", "P2", "All drones finished the route", "", [["done", "Finished / started"]]],
+
+  ["A1", "P3", "Approach flown as planned", "Advance toward the target along the planned line.", []],
+  ["A2", "P3", "Stopped at the planned stand-off point", "Non-contact. Write the closest distance to the target.", [["closest", "Closest distance (m)"]]],
+  ["A3", "P3", "Speed and timing as planned", "", [["speed", "Speed (m/s)"]]],
+  ["A4", "P3", "All drones reached the end point", "", [["done", "Reached / started"]]],
+
+  ["H1", "P4", "Hover held over the target for the planned time", "", [["secs", "Hover time (s)"]]],
+  ["H2", "P4", "Position stayed steady (GPS check)", "Hover over a tarp: how much the position wandered.", [["drift", "Drift (m)"]]],
+];
+
+const BLUE = [
+  ["B1", "RUN", "IRIS data covers the whole run", "From before take-off to after landing, with no gaps.", [["gaps", "Gaps (s)"]]],
+  ["B2", "RUN", "IRIS clock matches UTC", "Measured offset is small enough to compare.", [["offset", "Offset (s)"], ["target", "Target ≤ (s)"]]],
+
+  ["BL1", "P1", "Low drone detected", "Detected at least once at each flown altitude.", [["alt", "Lowest detected alt (m)"], ["target", "Target"]]],
+  ["BL2", "P1", "Detected early enough", "Distance from the radar at first detection.", [["dist", "First detection (m)"], ["target", "Target ≥ (m)"]]],
+  ["BL3", "P1", "Track held", "Number of breaks and the longest gap.", [["breaks", "Breaks"], ["gap", "Longest gap (s)"], ["target", "Target ≤ (s)"]]],
+  ["BL4", "P1", "Classified as a drone", "Time from first detection to 'drone'.", [["secs", "Time to classify (s)"]]],
+  ["BL5", "P1", "Why tracking failed (if it did)", "Too low / too far / drones too close together / not flying straight at the radar / weather.", [["why", "Reason"]]],
+
+  ["BD1", "P2", "Detected early enough", "Distance from the radar at first detection.", [["dist", "First detection (m)"], ["target", "Target ≥ (m)"]]],
+  ["BD2", "P2", "Position matched our GPS", "Distance and height difference to our logs.", [["horiz", "Horizontal error (m)"], ["vert", "Height error (m)"], ["target", "Target ≤ (m)"]]],
+  ["BD3", "P2", "Speed and direction shown correctly", "", [["speed", "Speed error (m/s)"]]],
+  ["BD4", "P2", "Every drone got its own track", "How many drones vs how many tracks, and how long until each had one.", [["seen", "Tracks / drones"], ["secs", "Time to all (s)"]]],
+  ["BD5", "P2", "No tracks merged or swapped", "Two drones shown as one, or tracks jumping between drones.", [["events", "Merges / swaps"]]],
+  ["BD6", "P2", "Accuracy held at long range", "Did the error grow with distance?", [["note", "Error near / far (m)"]]],
+
+  ["BA1", "P3", "Alarm before the stand-off point", "Distance at first alarm.", [["dist", "First alarm (m)"], ["target", "Target ≥ (m)"]]],
+  ["BA2", "P3", "Quick from detection to alarm", "", [["secs", "Detection → alarm (s)"], ["target", "Target ≤ (s)"]]],
+  ["BA3", "P3", "Track held until the end", "", [["breaks", "Breaks"]]],
+  ["BA4", "P3", "Each drone tracked separately", "", [["seen", "Tracks / drones"]]],
+
+  ["BH1", "P4", "Track kept while hovering", "Some radars lose slow or still targets.", [["lost", "Lost for (s)"]]],
+  ["BH2", "P4", "Still classified as a drone while hovering", "Did the data change after the hover started?", [["note", "What changed"]]],
+];
+
+const KEY = "icpi-scorecard-v1";
+let state = load() || blank();
+
+function blank() { return { run: {}, blue: {}, phases: {}, items: {} }; }
+function load() { try { return JSON.parse(localStorage.getItem(KEY)); } catch (e) { return null; } }
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify(state)); setSaved("Saved in this browser"); }
+  catch (e) { setSaved("Not saved in browser: use Save file"); }
+}
+function setSaved(t) { document.getElementById("saved").textContent = t; }
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function fieldGrid(el, defs, obj) {
+  el.innerHTML = defs.map(([k, l]) => `<label class="f">${esc(l)}<input data-k="${k}" value="${esc(obj[k])}"></label>`).join("");
+  el.querySelectorAll("input").forEach(i => i.addEventListener("input", () => { obj[i.dataset.k] = i.value; save(); }));
+}
+
+function phaseKey(team, pid) { return pid; }  // phase use and times belong to the run, shared by both teams
+
+function renderTeam(team, items, el) {
+  el.innerHTML = PHASES.map(ph => {
+    const its = items.filter(i => i[1] === ph.id);
+    if (!its.length) return "";
+    const pk = phaseKey(team, ph.id);
+    const p = state.phases[pk] ||= {};
+    const head = ph.id === "RUN" ? `<div class="phase-head"><h3>${ph.name}</h3></div>` : team === "blue" ?
+      `<div class="phase-head"><h3>${esc(ph.name)}</h3><span class="sub" data-show="${pk}">${esc(p.use || "Undecided")}
+        ${p.start ? " · " + esc(p.start) + " – " + esc(p.end || "") : ""} (set in Red team)</span></div>` : `
+      <div class="phase-head"><h3>${esc(ph.name)}</h3>
+        <label class="f">Used in this run<select data-p="${pk}" data-k="use">
+          ${["Included", "Not used", "Undecided"].map(o => `<option${(p.use || "Undecided") === o ? " selected" : ""}>${o}</option>`).join("")}
+        </select></label>
+        <label class="f">Start UTC<input data-p="${pk}" data-k="start" value="${esc(p.start)}"></label>
+        <label class="f">End UTC<input data-p="${pk}" data-k="end" value="${esc(p.end)}"></label>
+        <label class="f">If not used: why<input data-p="${pk}" data-k="why" value="${esc(p.why)}"></label>
+      </div>`;
+    return `<div class="phase${p.use === "Not used" ? " off" : ""}" data-pk="${pk}">${head}${its.map(it => itemHTML(team, it)).join("")}</div>`;
+  }).join("");
+  el.querySelectorAll("[data-p]").forEach(i => i.addEventListener(i.tagName === "SELECT" ? "change" : "input", () => {
+    state.phases[i.dataset.p][i.dataset.k] = i.value; save();
+    if (i.dataset.k === "use") renderTeam("blue", BLUE, document.getElementById("blue"));
+    if (i.dataset.k === "use") { i.closest(".phase").classList.toggle("off", i.value === "Not used"); summary(); }
+  }));
+  el.querySelectorAll(".pf button").forEach(b => b.addEventListener("click", () => {
+    const id = b.parentElement.dataset.id, r = state.items[id] ||= {};
+    r.result = r.result === b.dataset.v ? "" : b.dataset.v;  // click again to clear
+    b.parentElement.querySelectorAll("button").forEach(x => x.classList.toggle("on", x.dataset.v === r.result));
+    save(); summary();
+  }));
+  el.querySelectorAll("[data-i]").forEach(i => i.addEventListener("input", () => {
+    (state.items[i.dataset.i] ||= {})[i.dataset.k] = i.value; save();
+  }));
+}
+
+function itemHTML(team, [id, , q, help, extras]) {
+  const r = state.items[id] || {};
+  const btn = (v, t) => `<button data-v="${v}" class="${r.result === v ? "on" : ""}">${t}</button>`;
+  const ex = [...extras, ["note", "Note / evidence (file)"]].filter((e, i, a) => a.findIndex(x => x[0] === e[0]) === i);
+  return `<div class="item"><div class="iid">${id}</div>
+    <div><div class="q">${esc(q)}</div>${help ? `<div class="help">${esc(help)}</div>` : ""}
+      ${team === "blue" ? `<div class="redwin">If Fail → Red team win</div>` : ""}</div>
+    <div class="pf" data-id="${id}">${btn("pass", "Pass")}${btn("fail", "Fail")}${btn("na", "N/A")}</div>
+    <div class="extra">${ex.map(([k, l]) => `<label class="f">${esc(l)}<input data-i="${id}" data-k="${k}" value="${esc(r[k])}"></label>`).join("")}</div>
+  </div>`;
+}
+
+function tally(team, items, pid) {
+  const t = { pass: 0, fail: 0, na: 0, open: 0 };
+  const off = (state.phases[phaseKey(team, pid)] || {}).use === "Not used";
+  items.filter(i => pid === "ALL" || i[1] === pid).forEach(i => {
+    const pOff = i[1] !== "RUN" && (state.phases[phaseKey(team, i[1])] || {}).use === "Not used";
+    const r = (state.items[i[0]] || {}).result;
+    if (off || pOff) t.na++; else if (r) t[r]++; else t.open++;
+  });
+  return t;
+}
+
+function summary() {
+  const row = (label, t, cls = "") => {
+    const d = t.pass + t.fail;
+    const sc = d ? Math.round(100 * t.pass / d) + " %" : "Not assessed";
+    return `<tr class="${cls}"><td>${label}</td><td class="num">${t.pass}</td><td class="num">${t.fail}</td><td class="num">${t.na}</td>
+      <td class="num">${t.open}</td><td class="num score">${sc}</td></tr>`;
+  };
+  let h = `<tr><th>Team · phase</th><th class="num">Pass</th><th class="num">Fail</th><th class="num">N/A</th><th class="num">Open</th><th class="num">Score</th></tr>`;
+  for (const [team, items, name] of [["red", RED, "Red"], ["blue", BLUE, "Blue"]]) {
+    PHASES.forEach(ph => { if (items.some(i => i[1] === ph.id)) h += row(`${name} · ${ph.name}`, tally(team, items, ph.id)); });
+    h += row(`<b>${name} · whole run</b>`, tally(team, items, "ALL"), "score");
+  }
+  const blueFails = tally("blue", BLUE, "ALL").fail;
+  h += `<tr><td colspan="6" class="note-box">Red team wins from Blue fails: <b>${blueFails}</b> item(s) where IRIS missed its target.</td></tr>`;
+  document.getElementById("summary").innerHTML = h;
+}
+
+function render() {
+  fieldGrid(document.getElementById("run-fields"), RUN_FIELDS, state.run);
+  fieldGrid(document.getElementById("blue-fields"), BLUE_FIELDS, state.blue);
+  renderTeam("red", RED, document.getElementById("red"));
+  renderTeam("blue", BLUE, document.getElementById("blue"));
+  summary();
+}
+
+function download(name, text, type) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], { type }));
+  a.download = name; document.body.appendChild(a); a.click(); a.remove();
+}
+const fname = ext => `scorecard_${(state.run.run_id || "run").replace(/[^\w.-]+/g, "_")}.${ext}`;
+
+document.getElementById("b-save").onclick = () =>
+  download(fname("json"), JSON.stringify({ format: "icpi-phased-scorecard/1", saved_utc: new Date().toISOString(), ...state }, null, 2), "application/json");
+document.getElementById("b-csv").onclick = () => {
+  const q = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const rows = [["run_id", "team", "phase", "phase_use", "item", "question", "result", "values", "note"]];
+  for (const [team, items] of [["red", RED], ["blue", BLUE]]) items.forEach(([id, ph, qq]) => {
+    const r = state.items[id] || {}, p = state.phases[phaseKey(team, ph)] || {};
+    const vals = Object.entries(r).filter(([k]) => !["result", "note"].includes(k)).map(([k, v]) => `${k}=${v}`).join("; ");
+    rows.push([state.run.run_id, team, ph, ph === "RUN" ? "" : (p.use || "Undecided"), id, qq, r.result || "open", vals, r.note]);
+  });
+  download(fname("csv"), rows.map(r => r.map(q).join(",")).join("\r\n"), "text/csv");
+};
+document.getElementById("f-open").onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  f.text().then(t => { const d = JSON.parse(t); state = { run: d.run || {}, blue: d.blue || {}, phases: d.phases || {}, items: d.items || {} }; save(); render(); });
+};
+document.getElementById("b-print").onclick = () => window.print();
+document.getElementById("b-new").onclick = () => {
+  if (confirm("Start a new run? Save this one first (Save file) if you need it.")) { state = blank(); save(); render(); }
+};
+render();
+</script>
+</body>
+</html>
