@@ -18,7 +18,13 @@ That one command:
 The steps can also be run one by one: `dw ingest`, `dw convert`, `dw env`, `dw replay`, plus `dw verify` (hash check)
 and `dw info`. Adding files later: `dw ingest` again, then `dw convert` and `dw replay`.
 
-## Open the replay
+## Open the replay (easy way)
+
+```
+uv run dw view <session folder>
+```
+
+## Open the replay (manual)
 
 Open it yourself, in your own PowerShell. Bind to 127.0.0.1 so Windows doesn't create firewall rules:
 
