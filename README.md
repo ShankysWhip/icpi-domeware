@@ -40,7 +40,21 @@ If a Windows Firewall prompt appears anyway, press **Cancel**.
 | DJI FlightRecord `.txt` v13+ (encrypted) | stored raw; decode with a DJI API key (`python -m domeware.adapters.dji_decode`) or export CSV |
 | DJI video captions `.SRT` (turn on "Video Captions" in DJI Fly) | converted as drone truth; local time → UTC, DST-aware |
 | ArduPilot `.bin` | converted as drone truth (GPS week/ms − 18 s leap) |
-| MAVLink `.tlog`, RTKLIB `.pos` | stored raw; converters next |
+| RTKLIB `.pos` (RTK truth) | converted as drone truth; GPST → UTC, ellipsoid → N2000 (fails loudly without the geoid grid) |
+| MAVLink `.tlog` | stored raw; converter next |
+
+## Environment, weather and line of sight (automatic in `dw run`, or `dw env`)
+
+- **Terrain:** NLS 2 m elevation model + newest aerial photo.
+- **Features:** buildings and power lines (NLS topographic database), forest heights (Metsäkeskus canopy model).
+- **Weather:** FMI observations for the run's time window, from the nearest station with data per parameter.
+- **MODELLED line of sight from the radar:** the lowest height above ground at which a target is visible past terrain,
+  forest and buildings (k = 4/3). Geometry only, not detection probability.
+
+## Report
+
+`dw report <session>` (also part of `dw run`) writes `views/report.md`. It covers: data received, site, radar events,
+radar-vs-truth numbers, flight-time weather, environment, pictures, sources and known limits.
 
 ## Radar vs drone
 
