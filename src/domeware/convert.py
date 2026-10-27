@@ -109,7 +109,8 @@ def convert_truth(s: Session) -> None:
 
     jobs = ([(f, T.read_dji_srt) for f in s.raw_files("dji_srt")]
             + [(f, T.read_ardupilot_bin) for f in s.raw_files("ardupilot_bin")]
-            + [(f, T.read_rtklib_pos) for f in s.raw_files("rtklib_pos")])
+            + [(f, T.read_rtklib_pos) for f in s.raw_files("rtklib_pos")]
+            + [(f, T.read_mavlink_tlog) for f in s.raw_files("mavlink_tlog")])
     if not jobs:
         return
     site = s.manifest.get("site")
@@ -118,22 +119,56 @@ def convert_truth(s: Session) -> None:
     out.mkdir(parents=True, exist_ok=True)
     for f, reader in jobs:
         try:
-            df, meta = reader(f)
+            df_all, meta = reader(f)
         except Exception as e:  # one bad file must not stop the others; the reason is recorded
             s.note(f"truth: {f.name}: NOT converted: {e}")
             continue
+        # one stream per vehicle: a ground-station log can hold the whole swarm
+        groups = df_all.groupby("vehicle_id") if "vehicle_id" in df_all else [(None, df_all)]
+        for vid, df in groups:
+            df = df.reset_index(drop=True)
+            stem = f.stem if vid is None else f"{f.stem}_sys{int(vid)}"
+            ground = None
+            if site and (s.env / "dem.tif").exists():
+                from domeware.env import sample_dem
+
+                ground = sample_dem(s.env / "dem.tif", float(df["lat_deg"].iloc[0]), float(df["lon_deg"].iloc[0]))
+            df = T.to_radar_frame(df, site, ground, align) if site else df
+            df["source"] = f.name
+            df.to_parquet(out / f"{stem}.parquet", index=False)
+            m = dict(meta, rows=len(df), ground_at_takeoff_n2000_m=ground, terrain_alignment_m=round(align, 2), file=f.name)
+            s.manifest["streams"][f"truth/{stem}"] = m
+            s.note(f"truth: {stem}: {len(df)} fixes, {df['t_utc'].iloc[0]} .. {df['t_utc'].iloc[-1]}"
+                   + ("" if ground is not None else " (no DEM yet: run dw env, then dw convert, for heights)"))
+
+
+def convert_planned(s: Session) -> None:
+    """Skybrush shows -> streams/planned/<show>_<drone>.parquet (show time; heights above the show origin ground)."""
+    files = s.raw_files("skybrush_skyc")
+    if not files:
+        return
+    from domeware.adapters import skybrush as K
+    from domeware.adapters import truth as T
+
+    site, align = s.manifest.get("site"), terrain_alignment_m(s)
+    out = s.streams / "planned"
+    out.mkdir(parents=True, exist_ok=True)
+    for f in files:
+        try:
+            df_all, meta = K.read_skyc(f)
+        except Exception as e:
+            s.note(f"planned: {f.name}: NOT converted: {e}")
+            continue
         ground = None
-        if site and (s.env / "dem.tif").exists():
+        if (s.env / "dem.tif").exists():
             from domeware.env import sample_dem
 
-            ground = sample_dem(s.env / "dem.tif", float(df["lat_deg"].iloc[0]), float(df["lon_deg"].iloc[0]))
-        df = T.to_radar_frame(df, site, ground, align) if site else df
-        df["source"] = f.name
-        df.to_parquet(out / f"{f.stem}.parquet", index=False)
-        meta.update({"ground_at_takeoff_n2000_m": ground, "terrain_alignment_m": round(align, 2), "file": f.name})
-        s.manifest["streams"][f"truth/{f.stem}"] = meta
-        s.note(f"truth: {f.name}: {meta['rows']} fixes, {df['t_utc'].iloc[0]} .. {df['t_utc'].iloc[-1]}"
-               + ("" if ground is not None else " (no DEM yet: run dw env, then dw convert, for heights)"))
+            ground = sample_dem(s.env / "dem.tif", *meta["origin"])
+        for drone, df in df_all.groupby("drone"):
+            df = T.to_radar_frame(df.reset_index(drop=True), site, ground, align) if site else df
+            df.to_parquet(out / f"{f.stem}_{drone}.parquet", index=False)
+        s.manifest["streams"][f"planned/{f.stem}"] = dict(meta, ground_at_origin_n2000_m=ground)
+        s.note(f"planned: {f.name}: {meta['drones']} drones, {meta['duration_s']:.0f} s show")
 
 
 def report_unhandled(s: Session) -> None:
@@ -141,7 +176,6 @@ def report_unhandled(s: Session) -> None:
         "dji_flightrecord_encrypted": "DJI log v13+ is encrypted. Decode it with a DJI developer API key "
                                       "(python -m domeware.adapters.dji_decode) or export CSV from Airdata/DJI, "
                                       "then 'dw ingest' the CSV.",
-        "mavlink_tlog": "MAVLink .tlog: stored raw; converter not written yet.",
         "unknown": "Unknown file type: stored raw only.",
     }
     for role, hint in hints.items():
@@ -154,5 +188,6 @@ def run(s: Session) -> None:
     convert_robin(s)
     convert_dji_csv(s)
     convert_truth(s)
+    convert_planned(s)
     report_unhandled(s)
     s.save()

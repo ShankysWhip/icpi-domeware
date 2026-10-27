@@ -58,6 +58,7 @@ def main(argv: list[str] | None = None) -> int:
             from domeware import convert
 
             convert.convert_truth(s)
+            convert.convert_planned(s)
             s.save()
         from domeware import features, weather
 

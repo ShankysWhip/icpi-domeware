@@ -56,6 +56,8 @@ def detect_role(path: Path) -> str:
         return "dji_srt"
     if name.endswith(".bin") and head[:2] == b"\xa3\x95":
         return "ardupilot_bin"
+    if name.endswith(".skyc"):
+        return "skybrush_skyc"
     if name.endswith(".tlog"):
         return "mavlink_tlog"
     if name.endswith(".pos"):

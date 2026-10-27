@@ -81,6 +81,43 @@ def read_ardupilot_bin(path: Path) -> tuple[pd.DataFrame, dict]:
     return df, meta
 
 
+def read_mavlink_tlog(path: Path) -> tuple[pd.DataFrame, dict]:
+    """MAVLink .tlog (ground-station recording) -> GLOBAL_POSITION_INT per vehicle (sysid).
+
+    UTC: each vehicle's boot clock is tied to UTC with SYSTEM_TIME (time_unix_usec vs time_boot_ms, median offset).
+    Without SYSTEM_TIME the ground station's receive time is used and flagged (it includes link delay).
+    """
+    from pymavlink import mavutil
+
+    mlog = mavutil.mavlink_connection(str(path), dialect="ardupilotmega")
+    pos, sync = [], {}
+    while (m := mlog.recv_match(type=["GLOBAL_POSITION_INT", "SYSTEM_TIME"])) is not None:
+        sysid = m.get_srcSystem()
+        if m.get_type() == "SYSTEM_TIME":
+            if m.time_unix_usec > 1.5e15 and m.time_boot_ms > 0:  # unix time is valid only after GPS time is known
+                sync.setdefault(sysid, []).append(m.time_unix_usec / 1e3 - m.time_boot_ms)
+        elif m.lat != 0 or m.lon != 0:
+            pos.append((sysid, m.time_boot_ms, getattr(m, "_timestamp", np.nan), m.lat / 1e7, m.lon / 1e7,
+                        m.relative_alt / 1e3, m.alt / 1e3))
+    if not pos:
+        raise ValueError(f"{path.name}: no GLOBAL_POSITION_INT with a position")
+    df = pd.DataFrame(pos, columns=["vehicle_id", "boot_ms", "rx_unix_s", "lat_deg", "lon_deg", "h_rel_takeoff_m", "amsl_m"])
+    method = {}
+    t = np.full(len(df), np.nan)
+    for vid, idx in df.groupby("vehicle_id").groups.items():
+        if sync.get(vid):
+            t[idx] = df.loc[idx, "boot_ms"].to_numpy() + np.median(sync[vid])
+            method[int(vid)] = f"boot ms + SYSTEM_TIME offset (n={len(sync[vid])})"
+        else:
+            t[idx] = df.loc[idx, "rx_unix_s"].to_numpy() * 1e3
+            method[int(vid)] = "ground-station receive time (includes link delay) [flagged]"
+    df["t_utc"] = pd.to_datetime(t, unit="ms", utc=True)
+    df = df.drop(columns=["boot_ms", "rx_unix_s"]).drop_duplicates(["vehicle_id", "t_utc"]).sort_values(["vehicle_id", "t_utc"])
+    meta = {"time_method": method, "rows": len(df), "vehicles": sorted(int(v) for v in df["vehicle_id"].unique()),
+            "height_note": "relative_alt = height above home (EKF); amsl_m kept, unused"}
+    return df.reset_index(drop=True), meta
+
+
 PROJ_DIR = Path.home() / "Work" / "domeware-vendor" / "proj"  # vendored FIN2023N2000 + NKG grids
 
 
