@@ -64,6 +64,8 @@ def detect_role(path: Path) -> str:
         return "rtklib_pos"
     if name.endswith((".mp4", ".mov")):
         return "video"
+    if name.endswith((".png", ".jpg", ".jpeg", ".bmp")):
+        return "image"
     return "unknown"
 
 

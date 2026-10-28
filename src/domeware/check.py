@@ -118,6 +118,15 @@ def run(s: Session, radar_gap_s: float = 10.0, log_gap_s: float = 3.0) -> int:
             f"video {c['file'].name}: " + (f"starts {c['start_utc']:%H:%M:%S} UTC ({c['method']})" if c["start_utc"] is not None
                                            else "no time: copy its .SRT too, or add it to video_offsets.csv"))
 
+    from domeware.images import pictures
+
+    pics = pictures(s)
+    if pics:
+        timed = [p for p in pics if p["t_utc"] is not None]
+        groups = sorted({p["group"] for p in pics if p["t_utc"] is None})
+        (ok if len(timed) == len(pics) else warn)(
+            f"pictures: {len(timed)}/{len(pics)} on the clock" + (f"; declare the clock for {', '.join(groups)} in image_clocks.csv" if groups else ""))
+
     for line in s.manifest["log"][-30:]:
         if "NOT converted" in line["msg"] or "not read" in line["msg"]:
             fail(line["msg"])

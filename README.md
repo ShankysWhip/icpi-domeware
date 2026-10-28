@@ -142,6 +142,21 @@ All three run inside `dw run`.
   never deletes at the destination, merges notes, and checks the copy against the seal. Encrypt the copy for
   transport (e.g. age).
 
+## Screenshots and the RF spectrum
+
+Pictures (`.png` / `.jpg`) from a spectrum analyser SD card (e.g. R&S PR200), the radar screen or a phone go into
+the replay as picture lanes on the UTC clock. Declare each device's clock once in `<session>/image_clocks.csv`:
+
+```
+match,clock
+PR200,Europe/Helsinki
+IMG_0042.png,2026-10-28T09:14:30Z
+```
+
+`match` is a folder or a file name; `clock` is `UTC`, a zone like `Europe/Helsinki`, an offset like `+02:00`, or the
+picture's own UTC time. Undeclared pictures are left out, never assumed to be UTC (`dw check` lists them). RF trace
+exports (CSV or the analyser's own format) get an adapter once a real sample file exists.
+
 ## Team
 
 - **`dw list`** shows every session in one table and writes `domeware-data/sessions/index.html`.

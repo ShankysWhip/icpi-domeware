@@ -431,6 +431,10 @@ def build(s: Session) -> dict:
     from domeware.video import log_videos
 
     video_paths = log_videos(rec, s)
+    from domeware.images import log_pictures
+
+    picture_paths = log_pictures(rec, s)
+    stats["pictures"] = picture_paths
     stats["videos"] = video_paths
     from domeware import notes as N
 
@@ -450,7 +454,8 @@ def build(s: Session) -> dict:
     bp = rrb.Blueprint(
         rrb.Horizontal(
             rrb.Vertical(rrb.Spatial3DView(name="Site", origin="/world", time_ranges=[trail]), *chase,
-                         *[rrb.Spatial2DView(name=p.split("/", 1)[1], origin=f"/{p}") for p in video_paths]),
+                         *[rrb.Spatial2DView(name=p.split("/", 1)[1], origin=f"/{p}") for p in video_paths],
+                         *[rrb.Spatial2DView(name=f"Screens: {p.split('/', 1)[1]}", origin=f"/{p}") for p in picture_paths]),
             rrb.Vertical(rrb.TimeSeriesView(name="Range from radar (m)", origin="/plots/range_m"),
                          rrb.TimeSeriesView(name="Height above radar ground (m)", origin="/plots/height_above_radar_ground_m"),
                          *([rrb.TimeSeriesView(name="Wind (m/s, FMI nearest)", origin="/weather",
