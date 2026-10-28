@@ -98,11 +98,11 @@ def best_time_shift(truth: pd.DataFrame, on: pd.DataFrame, max_s: float = 5.0, s
             "error_h_at_shift_m": round(meds[i], 1), "error_h_at_zero_m": round(zero, 1)}
 
 
-def first_plot(truth: pd.DataFrame, plots: pd.DataFrame | None, gate_m: float, t_air) -> tuple:
+def first_plot(truth: pd.DataFrame, plots: pd.DataFrame | None, gate_m: float, t_air, t_land=None) -> tuple:
     """First radar plot (before any track) within the gate of the drone, after take-off: (time, range) or (None, None)."""
     if plots is None or plots.empty:
         return None, None
-    p = plots[plots["t_utc"] >= t_air]
+    p = plots[(plots["t_utc"] >= t_air) & ((plots["t_utc"] <= t_land) if t_land is not None else True)]
     if p.empty:
         return None, None
     d = np.linalg.norm(p[["e_m", "n_m", "u_m"]].to_numpy() - _interp_truth(truth, p["t_utc"]), axis=1)
@@ -133,9 +133,10 @@ def compare_one(truth: pd.DataFrame, tracks: pd.DataFrame, gate_m: float, airbor
         m = on[mask]
         return m["t_utc"].iloc[0] if len(m) else None
 
-    t_first = on["t_utc"].iloc[0] if len(on) else None
-    t_drone = first(on["class_name"].eq("DRONE"))
-    t_alarm = first(on["alarm"].fillna(False).astype(bool))
+    flying = on["t_utc"] >= t_air  # a radar can track a drone standing on the ground; delays count from take-off
+    t_first = on.loc[flying, "t_utc"].iloc[0] if flying.any() else None
+    t_drone = first(on["class_name"].eq("DRONE") & flying)
+    t_alarm = first(on["alarm"].fillna(False).astype(bool) & flying)
     # coverage: share of airborne seconds with a drone-track state within 2 s
     secs = pd.date_range(t_air, t_land, freq="1s").as_unit("ns")
     if len(on) and len(secs):
@@ -146,8 +147,8 @@ def compare_one(truth: pd.DataFrame, tracks: pd.DataFrame, gate_m: float, airbor
         coverage = float(np.mean(near <= 2e9))
     else:
         coverage = 0.0
-    t_plot, r_plot = first_plot(truth, plots, gate_m, t_air)
-    shift = best_time_shift(truth, on)
+    t_plot, r_plot = first_plot(truth, plots, gate_m, t_air, t_land)
+    shift = best_time_shift(air if len(air) > 10 else truth, on[(on["t_utc"] >= t_air) & (on["t_utc"] <= t_land)])
     e = on.dropna(subset=["err_h_m"])
     stats = lambda s: {"n": int(len(s)), "median": round(float(s.median()), 1), "p90": round(float(s.quantile(.9)), 1),  # noqa: E731
                        "rms": round(float(np.sqrt((s ** 2).mean())), 1)} if len(s) else None
@@ -167,7 +168,7 @@ def compare_one(truth: pd.DataFrame, tracks: pd.DataFrame, gate_m: float, airbor
         "track_breaks": max(0, len(on_ids) - 1),
         "error_horizontal_m": stats(e["err_h_m"]), "error_vertical_m": stats(e["err_v_m"]),
         "error_3d_m": stats(e["err_3d_m"]),
-        "range_at_first_track_m": round(float(on["range_m"].iloc[0]), 1) if len(on) else None,
+        "range_at_first_track_m": round(float(on.loc[flying, "range_m"].iloc[0]), 1) if flying.any() else None,
         "max_range_tracked_m": round(float(on["range_m"].max()), 1) if len(on) else None,
         "other_tracks_during_flight": len(other_ids),
         "_on": on, "_truth": truth,
@@ -242,11 +243,15 @@ def run(s: Session, gate_m: float = 50.0, airborne_m: float = 2.0) -> list[dict]
         if "h_rel_takeoff_m" not in tr and "height_rel_takeoff_m" in tr:
             tr["h_rel_takeoff_m"] = tr["height_rel_takeoff_m"]
         loaded[f] = tr
-    owner = assign_tracks({f.stem: d for f, d in loaded.items()}, tracks, gate_m)
+    owner = assign_tracks({f.stem: d for f, d in loaded.items() if {"e_m", "n_m", "u_m"} <= set(d.columns)}, tracks, gate_m)
     plots = load_plots(s)
     for f, tr in loaded.items():
         mine = [t for t, n in owner.items() if n == f.stem]
-        r = compare_one(tr, tracks[tracks["track_id"].isin(mine)], gate_m, airborne_m, plots)
+        try:
+            r = compare_one(tr, tracks[tracks["track_id"].isin(mine)], gate_m, airborne_m, plots)
+        except (ValueError, KeyError) as e:  # one log without positions must not stop the others
+            s.note(f"compare: {f.name}: skipped ({e})")
+            continue
         on, truth = r.pop("_on"), r.pop("_truth")
         flying = tracks[(tracks["t_utc"] >= pd.Timestamp(r["airborne_utc"])) & (tracks["t_utc"] <= pd.Timestamp(r["landed_utc"]))]
         r["other_tracks_during_flight"] = len(set(flying["track_id"]) - set(owner))  # none of our drones

@@ -52,6 +52,14 @@ def _gap(t: pd.Series) -> float:
     return round(float(t.diff().dt.total_seconds().max()), 1) if len(t) > 1 else 0.0
 
 
+def _gap_window(t: pd.Series, a, b) -> float | None:
+    """Longest silence in [a, b], counting from the window's start and to its end. None with < 2 messages inside."""
+    t = t[(t >= a) & (t <= b)]
+    if len(t) < 2:
+        return None
+    return _gap(pd.concat([pd.Series([pd.Timestamp(a)]), t, pd.Series([pd.Timestamp(b)])], ignore_index=True))
+
+
 def _speed(d: pd.DataFrame) -> pd.Series:
     dt = d["t_utc"].diff().dt.total_seconds()
     return (np.hypot(d["e_m"].diff(), d["n_m"].diff()) / dt).where(dt > 0)
@@ -62,7 +70,7 @@ def measure(truths: dict, tracks: pd.DataFrame, a, b, gate_m: float, airborne_m:
     """Per drone, everything the cards ask for in one window [a, b]."""
     tr_w = _cut(tracks, a, b)
     cut = {name: _cut(d, a, b) for name, d in truths.items()}
-    cut = {k: d for k, d in cut.items() if len(d) >= 2}
+    cut = {k: d for k, d in cut.items() if len(d) >= 2 and (d["h_rel_takeoff_m"] > airborne_m).any()}
     owner = assign_tracks(cut, tr_w, gate_m) if len(tr_w) else {}
     per = {}
     for name, dw in cut.items():
@@ -119,18 +127,34 @@ def association_grid(m: dict, a, b) -> pd.DataFrame:
     return out
 
 
-def _merges_swaps(grid: pd.DataFrame) -> tuple[int, int]:
-    """Merges: seconds where one track was the drone track for two drones at once. Swaps: a drone's track changes
-    to one that belonged to another drone earlier in the window."""
-    g = grid.dropna(subset=["track_id"])
-    merges = int((g.groupby(["t_utc", "track_id"])["drone"].nunique() > 1).sum()) if len(g) else 0
-    owner, swaps = {}, 0
-    for _t, rows in g.sort_values("t_utc").groupby("t_utc"):
-        for drone, tid in zip(rows["drone"], rows["track_id"], strict=True):
-            prev = owner.get(tid)
-            if prev is not None and prev != drone:
-                swaps += 1
-            owner[tid] = drone
+def merges_swaps(cut: dict[str, pd.DataFrame], tracks: pd.DataFrame, gate_m: float) -> tuple[int, int]:
+    """From every track state, not from the one-drone-per-track assignment (which hides both by design).
+
+    Merge: a second in which one track was within the gate of two or more drones and at least one of them had no
+    other track near it (the radar saw two drones as one). Swap: a track's nearest drone changes while it is
+    tracked (the track moved from one drone to another)."""
+    if len(cut) < 2 or tracks.empty:
+        return 0, 0
+    names = list(cut)
+    xyz = tracks[["e_m", "n_m", "u_m"]].to_numpy()
+    dist = np.column_stack([np.linalg.norm(xyz - _interp_truth(cut[n], tracks["t_utc"]), axis=1) for n in names])
+    dist = np.where(np.isfinite(dist), dist, np.inf)
+    near = dist < gate_m
+    st = pd.DataFrame(near, columns=names)
+    st["sec"], st["tid"] = tracks["t_utc"].dt.floor("1s").to_numpy(), tracks["track_id"].to_numpy()
+    merges = 0
+    multi_secs = set(st.loc[near.sum(axis=1) >= 2, "sec"])
+    for _sec, g in st[st["sec"].isin(multi_secs)].groupby("sec"):
+        per_tid = g.groupby("tid")[names].any()
+        for tid, row in per_tid.iterrows():
+            shared = [n for n in names if row[n]]
+            if len(shared) >= 2 and any(not per_tid.drop(index=tid)[n].any() for n in shared):
+                merges += 1
+                break
+    lab = pd.DataFrame({"tid": st["tid"], "t": tracks["t_utc"].to_numpy(),
+                        "lab": np.where(near.any(axis=1), dist.argmin(axis=1), -1)})
+    lab = lab[lab["lab"] >= 0].sort_values("t")
+    swaps = int(sum((g["lab"].diff().fillna(0) != 0).sum() for _, g in lab.groupby("tid")))
     return merges, swaps
 
 
@@ -181,8 +205,9 @@ def items_for(part: str, m: dict, grid: pd.DataFrame, whole_run: bool, a, b, ext
                 return float(np.nanmedian(np.abs(on["speed_mps"].to_numpy() - v)))
             se, d5 = _worst(det, sp_err, max)
             put("BD3", _fmt(se, 1), f"median |radar speed - GPS ground speed|, worst drone; {d5}")
-            mg, sw = _merges_swaps(grid)
-            put("BD5", f"{mg} / {sw}" if n > 1 else "0 / 0", "seconds two drones shared one track / times a track moved to another drone (1 s grid)")
+            mg, sw = merges_swaps({k: r["truth"] for k, r in per.items()}, m["tracks"], extra.get("gate_m", 50.0))
+            put("BD5", f"{mg} / {sw}", "seconds the radar showed two drones as one track / times a track moved from one "
+                "drone to another (every track update, nearest drone within the gate)")
             def near_far(r):
                 e = r["on"].dropna(subset=["err_h_m"])
                 if len(e) < 4:
@@ -257,9 +282,10 @@ def items_for(part: str, m: dict, grid: pd.DataFrame, whole_run: bool, a, b, ext
         if len(air) > 1:
             secs = pd.date_range(pd.Timestamp(a).ceil("1s"), pd.Timestamp(b).floor("1s"), freq="1s")
             pos = {k: _interp_truth(d, pd.Series(secs)) for k, d in air.items()}
-            sp_min = min(float(np.nanmin(np.linalg.norm(pos[x] - pos[y], axis=1))) for x, y in combinations(pos, 2)
-                         if np.isfinite(np.linalg.norm(pos[x] - pos[y], axis=1)).any())
-            put("A5", _fmt(sp_min, 1), "smallest 3D distance between any two drones (1 s grid)")
+            gaps = [float(np.nanmin(dd)) for x, y in combinations(pos, 2)
+                    if np.isfinite(dd := np.linalg.norm(pos[x] - pos[y], axis=1)).any()]
+            if gaps:
+                put("A5", _fmt(min(gaps), 1), "smallest 3D distance between any two drones (1 s grid)")
     if part == "P4" and air:
         def hover(d):
             v = _speed(d)
@@ -299,13 +325,13 @@ def run(s: Session, gate_m: float = 50.0, only: str | None = None) -> list[dict]
         m_run = measure(truths, tracks, a, b, gate_m, plots=plots)
         grid = association_grid(m_run, a, b)
         grid.to_parquet(s.views / f"association_{run_id}.parquet", index=False)
-        extra = {}
+        extra = {"gate_m": gate_m}
         if status:
             st = pd.concat([pd.read_parquet(p, columns=["t_utc"]) for p in status])
-            extra["radar_gap"] = _gap(_cut(st.assign(t_utc=pd.to_datetime(st["t_utc"], utc=True)), a, b)["t_utc"])
+            extra["radar_gap"] = _gap_window(pd.to_datetime(st["t_utc"], utc=True), a, b)
             extra["radar_gap_note"] = "longest time between radar status messages in the run"
         elif len(tracks):
-            extra["radar_gap"] = _gap(_cut(tracks, a, b)["t_utc"])
+            extra["radar_gap"] = _gap_window(tracks["t_utc"], a, b)
             extra["radar_gap_note"] = "longest time between radar track updates in the run (no status stream; quiet sky also counts)"
         phases = [p for p in ("P1", "P2", "P3", "P4") if p in w]
         if phases and len(tracks):
@@ -314,7 +340,7 @@ def run(s: Session, gate_m: float = 50.0, only: str | None = None) -> list[dict]
         for part in phases:  # phase checks only from real phase windows: whole-run numbers on a phase row mislead
             pa, pb = w[part]
             gp = grid[(grid["t_utc"] >= pa) & (grid["t_utc"] <= pb)]
-            for k, v in items_for(part, measure(truths, tracks, pa, pb, gate_m, plots=plots), gp, False, pa, pb, {}).items():
+            for k, v in items_for(part, measure(truths, tracks, pa, pb, gate_m, plots=plots), gp, False, pa, pb, {"gate_m": gate_m}).items():
                 items.setdefault(k, v)
         # whole-run detection numbers for the report; not imported into phase checks
         whole = items_for("P2", m_run, grid, True, a, b, {})

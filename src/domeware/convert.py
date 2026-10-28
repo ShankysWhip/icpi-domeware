@@ -142,9 +142,12 @@ def convert_truth(s: Session) -> None:
             continue
         # one stream per vehicle: a ground-station log can hold the whole swarm
         groups = df_all.groupby("vehicle_id") if "vehicle_id" in df_all else [(None, df_all)]
+        from domeware.replay import unique_stem
+
+        base = unique_stem(f, [j[0] for j in jobs])
         for vid, df in groups:
             df = df.reset_index(drop=True)
-            stem = f.stem if vid is None else f"{f.stem}_sys{int(vid)}"
+            stem = base if vid is None else f"{base}_sys{int(vid)}"
             ground = None
             if site and (s.env / "dem.tif").exists():
                 from domeware.env import sample_dem

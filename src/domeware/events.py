@@ -17,10 +17,10 @@ import pandas as pd
 from domeware.session import Session
 
 COLUMNS = ["t_utc", "drone", "kind", "detail", "source", "time_method"]
-EV_IDS = {10: "armed", 11: "disarmed", 15: "auto-armed", 17: "land complete", 18: "land complete (maybe)", 28: "not landed"}
+EV_IDS = {10: "armed", 11: "disarmed", 15: "auto-armed", 17: "land complete (maybe)", 18: "land complete", 28: "not landed"}
 ERR_SUBSYS = {5: "radio failsafe", 6: "battery failsafe", 7: "GPS failsafe", 8: "GCS failsafe", 9: "fence breach",
-              11: "GPS glitch", 12: "crash check", 16: "EKF check", 17: "EKF failsafe", 18: "barometer",
-              24: "terrain data"}
+              10: "flight mode change refused", 11: "GPS glitch", 12: "crash check", 16: "EKF check", 17: "EKF failsafe",
+              18: "barometer", 21: "terrain data", 23: "terrain failsafe", 24: "EKF primary changed"}
 
 
 def from_truth(df: pd.DataFrame, drone: str, airborne_m: float = 2.0, gap_s: float = 3.0) -> list[dict]:
@@ -43,11 +43,11 @@ def from_truth(df: pd.DataFrame, drone: str, airborne_m: float = 2.0, gap_s: flo
         for i in np.flatnonzero((dt > gap_s) & air):
             ev(int(i) - 1, "log gap", f"no fix for {dt[i]:.1f} s while airborne")
     if "nsats" in d and d["nsats"].notna().any():
-        weak = (d["nsats"] < 6).to_numpy()
+        weak = (d["nsats"] < 6).to_numpy() & air
         for i in np.flatnonzero(weak & ~np.r_[False, weak[:-1]]):
             ev(int(i), "weak GPS", f"{int(d['nsats'].iloc[i])} satellites")
     if "hdop" in d and d["hdop"].notna().any():
-        bad = (d["hdop"] > 2.0).to_numpy()
+        bad = (d["hdop"] > 2.0).to_numpy() & air
         for i in np.flatnonzero(bad & ~np.r_[False, bad[:-1]]):
             ev(int(i), "weak GPS", f"HDOP {d['hdop'].iloc[i]:.1f}")
     return out
@@ -128,7 +128,12 @@ def build(s: Session) -> pd.DataFrame:
 
     rows = []
     for f in truth_files(s):
-        for r in from_truth(pd.read_parquet(f), f.stem):
+        from domeware.replay import read_truth
+
+        d = read_truth(f)
+        if "h_rel_takeoff_m" not in d:
+            continue
+        for r in from_truth(d, f.stem):
             rows.append(dict(r, source=f"truth/{f.name}", time_method="truth stream time"))
     for role, reader in (("ardupilot_bin", from_ardupilot_bin), ("mavlink_tlog", from_mavlink_tlog)):
         for f in s.raw_files(role):

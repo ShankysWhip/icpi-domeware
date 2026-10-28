@@ -225,6 +225,23 @@ def truth_files(s: Session) -> list[Path]:
     return sorted(s.streams.glob("truth/*.parquet")) + sorted(s.streams.glob("dji/*_osd.parquet"))
 
 
+def read_truth(f: Path) -> pd.DataFrame:
+    """A truth stream with the common column names (DJI CSV writes height_rel_takeoff_m) and UTC times."""
+    d = pd.read_parquet(f)
+    if "h_rel_takeoff_m" not in d and "height_rel_takeoff_m" in d:
+        d["h_rel_takeoff_m"] = d["height_rel_takeoff_m"]
+    d["t_utc"] = pd.to_datetime(d["t_utc"], utc=True)
+    return d
+
+
+def unique_stem(f: Path, others: list[Path]) -> str:
+    """Stream name for a raw file. Drones often share file names (every DJI starts at DJI_0001): then the folder the
+    file came from is added, so one drone never overwrites another."""
+    if sum(1 for o in others if o.stem.lower() == f.stem.lower()) > 1:
+        return f"{f.parent.name}_{f.stem}"
+    return f.stem
+
+
 def _ts(series: pd.Series) -> np.ndarray:
     return pd.to_datetime(series, utc=True).dt.tz_convert(None).to_numpy().astype("datetime64[ns]")
 
@@ -288,9 +305,11 @@ def build(s: Session) -> dict:
     focus_ids = []
     truths = {}
     for f in truth_files(s):
-        d = pd.read_parquet(f).dropna(subset=["t_utc", "e_m", "n_m", "u_m"]).sort_values("t_utc")
+        d = read_truth(f)
+        if not {"e_m", "n_m", "u_m"} <= set(d.columns):
+            continue
+        d = d.dropna(subset=["t_utc", "e_m", "n_m", "u_m"]).sort_values("t_utc")
         if len(d):
-            d["t_utc"] = pd.to_datetime(d["t_utc"], utc=True)
             truths[f.stem] = d
     drone_rgb = {k: DRONE_RGB[i % len(DRONE_RGB)] for i, k in enumerate(truths)}
     owner: dict[int, str] = {}  # radar track id -> drone it was (nearest drone, gate 50 m; same rule as dw compare)

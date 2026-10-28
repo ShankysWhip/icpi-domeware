@@ -52,6 +52,9 @@ def run(s: Session, radar_gap_s: float = 10.0, log_gap_s: float = 3.0) -> int:
         fail("no radar data (no Robin XML in the files)") if not roles.get("robin_xml") else fail("radar file could not be read")
     span = None
     for name, table, t in radar:
+        if t.empty:
+            fail(f"radar {name}: the file has no {table} rows (radar off, or the export stopped)")
+            continue
         a, b = t.iloc[0], t.iloc[-1]
         span = (a, b) if span is None else (min(span[0], a), max(span[1], b))
         gaps = t.diff().dt.total_seconds()
@@ -141,7 +144,10 @@ def _truth_without_heights(s: Session) -> None:
             s.note(f"truth: {f.name}: NOT converted: {e}")
             continue
         out.mkdir(parents=True, exist_ok=True)
+        from domeware.replay import unique_stem
+
+        base = unique_stem(f, [j[0] for j in jobs])
         for vid, g in (df.groupby("vehicle_id") if "vehicle_id" in df else [(None, df)]):
-            stem = f.stem if vid is None else f"{f.stem}_sys{int(vid)}"
+            stem = base if vid is None else f"{base}_sys{int(vid)}"
             if not (out / f"{stem}.parquet").exists():  # never overwrite a full conversion with this partial one
                 g.reset_index(drop=True).to_parquet(out / f"{stem}.parquet", index=False)

@@ -125,3 +125,39 @@ def test_html_report_keeps_tables_lists_and_escapes(tmp_path):
     h = to_html("# Run <1>\n\n| a | b |\n|---|---|\n| **x** | `y` |\n\n- one\n- two\n\n![p](missing.png)\n", tmp_path)
     assert "<h1>Run &lt;1&gt;</h1>" in h and "<td><b>x</b></td><td><code>y</code></td>" in h
     assert "<li>one</li><li>two</li>" in h and "<img" not in h  # a missing picture is skipped, not broken
+
+
+def test_merges_and_swaps_seen_from_track_states():
+    from domeware.scorecard import merges_swaps
+
+    t = pd.date_range(T0, periods=60, freq="1s")
+    a = pd.DataFrame({"t_utc": t, "e_m": np.linspace(0, 600, 60), "n_m": 0.0, "u_m": 30.0, "h_rel_takeoff_m": 30.0})
+    b = a.assign(n_m=200.0)
+    # one radar track follows drone A for 30 s, then jumps to drone B: a swap
+    tr = pd.DataFrame({"t_utc": t, "track_id": 1, "e_m": a["e_m"], "n_m": np.r_[np.zeros(30), np.full(30, 200.0)], "u_m": 30.0})
+    assert merges_swaps({"A": a, "B": b}, tr, 50.0) == (0, 1)
+    # the drones fly 10 m apart and the radar shows one track between them: a merge every second
+    close = a.assign(n_m=10.0)
+    one = pd.DataFrame({"t_utc": t, "track_id": 7, "e_m": a["e_m"], "n_m": 5.0, "u_m": 30.0})
+    assert merges_swaps({"A": a, "B": close}, one, 50.0)[0] == 60
+
+
+def test_dji_csv_height_column_and_same_file_names(tmp_path):
+    from domeware.replay import unique_stem
+
+    s = _session(tmp_path)
+    d = pd.read_parquet(s.streams / "truth" / "A_SIMULATED.parquet").rename(columns={"h_rel_takeoff_m": "height_rel_takeoff_m"})
+    (s.streams / "dji").mkdir()
+    d.to_parquet(s.streams / "dji" / "C_SIMULATED_osd.parquet")
+    assert len(runs.airborne_spans(s)) == 3  # the DJI CSV stream counts too
+    assert "C_SIMULATED_osd" in set(events.build(s)["drone"])
+    files = [tmp_path / "drone1" / "DJI_0001.SRT", tmp_path / "drone2" / "DJI_0001.SRT", tmp_path / "drone2" / "DJI_0002.SRT"]
+    assert [unique_stem(f, files) for f in files] == ["drone1_DJI_0001", "drone2_DJI_0001", "DJI_0002"]
+
+
+def test_no_radar_in_window_is_not_zero_seconds():
+    from domeware.scorecard import _gap_window
+
+    t = pd.Series(pd.date_range(T0, periods=5, freq="2s"))
+    assert _gap_window(t, T0 + pd.Timedelta(hours=1), T0 + pd.Timedelta(hours=2)) is None
+    assert _gap_window(t, T0 - pd.Timedelta(seconds=30), T0 + pd.Timedelta(seconds=8)) == 30.0  # silence before data

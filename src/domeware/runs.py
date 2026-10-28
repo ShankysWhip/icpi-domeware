@@ -32,8 +32,11 @@ def airborne_spans(s: Session, airborne_m: float = 2.0) -> list[tuple[pd.Timesta
 
     spans = []
     for f in truth_files(s):
-        d = pd.read_parquet(f, columns=["t_utc", "h_rel_takeoff_m"])
-        d["t_utc"] = pd.to_datetime(d["t_utc"], utc=True)
+        from domeware.replay import read_truth
+
+        d = read_truth(f)
+        if "h_rel_takeoff_m" not in d:
+            continue
         air = d[d["h_rel_takeoff_m"] > airborne_m].sort_values("t_utc")
         if len(air):
             spans.append((air["t_utc"].iloc[0], air["t_utc"].iloc[-1], f.stem))
@@ -131,6 +134,8 @@ def import_card(s: Session, card: Path) -> pd.DataFrame:
     new = pd.DataFrame(new, columns=COLUMNS)
     if not (new["part"] == "RUN").any():  # a run row spanning its phases, so every phase sits inside a run
         new.loc[len(new)] = [run_id, "RUN", new["start_utc"].min(), new["end_utc"].max(), "span of the card's phases"]
+    if "notes" not in df:  # optional column; a hand-made runs.csv may leave it out
+        df["notes"] = ""
     keep = df[~((df["run_id"] == run_id) & df["part"].isin(new["part"]))]
     # an auto-detected run over the same time is this run: the card names it, so the auto row goes
     ra = new[new["part"] == "RUN"].iloc[0]
