@@ -12,6 +12,7 @@
   dw performance SESSION      radar detection share by range and height (views/performance.png)
   dw kml SESSION              views/session.kml for Google Earth (time slider)
   dw timeline SESSION         views/timeline_1s.csv: every drone, its radar track, weather and events per second
+  dw courageous SESSION       radar output in the COURAGEOUS format (CWA 18150 Annex H), schema-checked
   dw report SESSION           views/report.md
   dw view SESSION             open the replay (loopback only)
   dw check SESSION            in the field: is the data complete? (offline, seconds)
@@ -45,7 +46,7 @@ def main(argv: list[str] | None = None) -> int:
         if name == "run":
             p.add_argument("--radius", type=float, default=3000.0, help="environment radius around the radar (m)")
             p.add_argument("--no-env", action="store_true", help="skip terrain/imagery download")
-    for name in ("convert", "replay", "verify", "info", "report", "view", "events", "check", "performance", "kml", "timeline", "seal"):
+    for name in ("convert", "replay", "verify", "info", "report", "view", "events", "check", "performance", "kml", "timeline", "seal", "courageous"):
         sub.add_parser(name).add_argument("session", type=Path)
     p = sub.add_parser("sync", help="copy a sealed session to another disk and check it")
     p.add_argument("session", type=Path)
@@ -185,6 +186,11 @@ def main(argv: list[str] | None = None) -> int:
 
         if kml.build(s) is None and a.cmd == "kml":
             print("nothing to draw: no drone positions or radar tracks with positions")
+    if a.cmd == "courageous" or a.cmd == "run":
+        from domeware import courageous
+
+        for f in courageous.export(s) if s.manifest.get("site") else []:
+            print(f"  {f.name}")
     if a.cmd in ("run", "report"):
         from domeware import report
 

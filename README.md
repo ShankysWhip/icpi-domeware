@@ -163,6 +163,15 @@ IMG_0042.png,2026-10-28T09:14:30Z
 picture's own UTC time. Undeclared pictures are left out, never assumed to be UTC (`dw check` lists them). RF trace
 exports (CSV or the analyser's own format) get an adapter once a real sample file exists.
 
+## Standard output for evaluators
+
+- **`dw courageous <session>`** (also in `dw run`) writes the radar's output in the **COURAGEOUS data format**
+  (CWA 18150 Annex H, JSON Schema 0.4.1): `views/courageous_<radar>_<run>.json`, checked against the official schema,
+  with a `.notes.json` beside it that says how IRIS fields were mapped and whether the check passed. Evaluators
+  can open it with their own tools (e.g. track2kml). Heights are the radar's own values: the schema asks for EGM96,
+  and the radar's altitude datum is still unverified.
+- The schema is fetched by `dw setup` (hash-pinned) and is not copied into this repo: its repository has no licence.
+
 ## Team
 
 - **`dw list`** shows every session in one table and writes `domeware-data/sessions/index.html`.

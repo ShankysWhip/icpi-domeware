@@ -22,6 +22,7 @@ dependencies = [
     "defusedxml>=0.7.1",
     "mapbox-earcut>=2.1.0",
     "stonesoup>=1.9",
+    "jsonschema>=4.20",
 ]
 
 [project.scripts]

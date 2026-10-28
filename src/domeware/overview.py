@@ -110,6 +110,10 @@ VENDOR_FILES = [
      "515f68aeb59f659a3f3c340626cd060f58de6f93b4546df67732b906949e0d66"),
     ("time/leap-seconds.list", "https://data.iana.org/time-zones/tzdb/leap-seconds.list",
      "db5a895f16853b03bfc865e8d68f9fc8710ef1740e3400c701cd46a5bbbc3433"),
+    # COURAGEOUS data format schema 0.4.1 (CWA 18150 Annex H); fetched, not copied into git: the repo has no licence
+    ("courageous/courageous.schema.json",
+     "https://raw.githubusercontent.com/COURAGEOUS-isf/format/main/courageous.schema.json",
+     "8d897914a23059857f08afac83fb53e167ab52e6bb4c9eaaba475ed5c05d4228"),
 ]
 
 
