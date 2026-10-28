@@ -81,21 +81,36 @@ def best_time_shift(truth: pd.DataFrame, on: pd.DataFrame, max_s: float = 5.0, s
         return None
     lags = np.round(np.arange(-max_s, max_s + step_s / 2, step_s), 3)
     xy = on[["e_m", "n_m"]].to_numpy()
-    meds = []
+    meds, spreads, biases = [], [], []
     for lag in lags:
         q = x + lag * 1e9
         inside = (q >= tt[0]) & (q <= tt[-1])
         if inside.sum() < 10:
             meds.append(np.inf)
+            spreads.append(np.inf)
+            biases.append((np.nan, np.nan))
             continue
         p = np.column_stack([np.interp(q[inside], tt, truth[c].to_numpy()) for c in ("e_m", "n_m")])
-        meds.append(float(np.median(np.hypot(*(xy[inside] - p).T))))
+        err = xy[inside] - p
+        b = np.median(err, axis=0)
+        meds.append(float(np.median(np.hypot(*err.T))))
+        spreads.append(float(np.median(np.hypot(*(err - b).T))))  # what is left once a fixed position bias is removed
+        biases.append((float(b[0]), float(b[1])))
     i = int(np.argmin(meds))
     if not np.isfinite(meds[i]):
         return None
     zero = meds[int(np.argmin(np.abs(lags)))]
-    return {"shift_s": float(lags[i]), "at_edge": i in (0, len(lags) - 1),
-            "error_h_at_shift_m": round(meds[i], 1), "error_h_at_zero_m": round(zero, 1)}
+    out = {"shift_s": float(lags[i]), "at_edge": i in (0, len(lags) - 1),
+           "error_h_at_shift_m": round(meds[i], 1), "error_h_at_zero_m": round(zero, 1),
+           "method": "smallest median error (assumes no fixed position bias)", "bias_en_m": None}
+    # With a fixed bias, time and position can only be told apart when the drone turns: then the bias-free spread
+    # has a clear minimum. On a straight leg it is flat, and a time shift looks exactly like an along-track bias.
+    j = int(np.argmin(spreads))
+    near = [spreads[k] for k in (j - int(1 / step_s), j + int(1 / step_s)) if 0 <= k < len(spreads)]
+    if np.isfinite(spreads[j]) and near and min(near) >= 1.2 * spreads[j] + 0.2:
+        out.update(shift_s=float(lags[j]), at_edge=j in (0, len(lags) - 1), method="bias-free fit (the drone turned)",
+                   bias_en_m=[round(biases[j][0], 1), round(biases[j][1], 1)])
+    return out
 
 
 def first_plot(truth: pd.DataFrame, plots: pd.DataFrame | None, gate_m: float, t_air, t_land=None) -> tuple:
@@ -158,7 +173,8 @@ def compare_one(truth: pd.DataFrame, tracks: pd.DataFrame, gate_m: float, airbor
         "delay_airborne_to_first_plot_s": _secs(t_air, t_plot), "range_at_first_plot_m": r_plot,
         "radar_time_shift_s": None if shift is None else shift["shift_s"],
         "radar_time_shift_note": None if shift is None else (
-            f"horizontal error {shift['error_h_at_zero_m']} m as stamped, {shift['error_h_at_shift_m']} m when shifted"
+            f"{shift['method']}; horizontal error {shift['error_h_at_zero_m']} m as stamped, {shift['error_h_at_shift_m']} m when shifted"
+            + (f"; fixed position bias east {shift['bias_en_m'][0]} m, north {shift['bias_en_m'][1]} m" if shift["bias_en_m"] else "")
             + (" (at the search limit: the real offset may be larger)" if shift["at_edge"] else "")),
         "first_track_utc": str(t_first) if t_first is not None else None,
         "delay_airborne_to_first_track_s": _secs(t_air, t_first),

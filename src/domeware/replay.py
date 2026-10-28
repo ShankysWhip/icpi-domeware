@@ -432,6 +432,9 @@ def build(s: Session) -> dict:
 
     video_paths = log_videos(rec, s)
     stats["videos"] = video_paths
+    from domeware import notes as N
+
+    events += [(r.t_utc, f"NOTE {r.author}: {r.text}") for r in N.load(s).dropna(subset=["t_utc"]).itertuples()]
     events.sort(key=lambda e: e[0])
     for ts, msg in events:
         rec.set_time("utc", timestamp=ts.to_datetime64())

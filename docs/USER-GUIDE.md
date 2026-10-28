@@ -24,6 +24,9 @@ oikeassa maastossa ja laskee luvut scorecardeihin. Raakatiedostoja ei koskaan mu
 raportti, scorecard-arvot), `runs.csv` (ajot ja vaiheet, muokattavissa), `video_offsets.csv` (videoiden ajat, jos
 SRT puuttuu).
 
+**Muistiinpanot ja datan siirto:** `uv run dw note <sessio> "lintuparvi idässä" --at 09:14:30` lisää muistiinpanon.
+`uv run dw seal <sessio>` ja sitten `uv run dw sync <sessio> E:\` kopioi session levylle ja tarkistaa kopion.
+
 **Jos jokin menee pieleen:** `uv run dw doctor` kertoo, mitä koneelta puuttuu. Punainen virheteksti Claudelle.
 
 ## In English
@@ -39,5 +42,8 @@ and measures the scorecard numbers. Raw files are never changed.
 **Afterwards:** `dw run <session> <folder>` (everything, 1-3 min), `dw runs <session> --card <export>.json`,
 `dw scorecard <session>`, then **Import domeware values** on the page and set Pass / Fail yourselves.
 `dw view <session>` opens the 3D replay; `views/report.html` opens on a phone.
+
+**Notes and moving data:** `dw note <session> "text" --at 09:14:30`; `dw seal <session>`, then
+`dw sync <session> <disk>` copies the session and checks the copy.
 
 **Something wrong:** `dw doctor` lists what the laptop is missing.

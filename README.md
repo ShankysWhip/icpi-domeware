@@ -124,6 +124,24 @@ All three run inside `dw run` when drone truth exists.
 
 All three run inside `dw run`.
 
+## Trust in the numbers
+
+- **Synthetic acceptance tests** (`tests/test_synthetic.py`): SIMULATED radar output with a known latency, clock
+  offset, position bias, noise and missed updates; domeware must recover each within a tolerance set in advance.
+  Latency and clock offset come out as one time shift (positions alone cannot split them); a fixed bias is found
+  only when the drone turns; a hovering drone gives no time shift.
+- **Run validity**: every run in `dw scorecard` is VALID or NOT VALID with each reason (truth lost > 3 s, radar silent
+  > 10 s, no drone flying). Void runs are kept and counted.
+- **Intervals**: shares carry a 95 % Clopper-Pearson interval and their n (decision D13).
+
+## Notes and moving data
+
+- **`dw note <session> "text" --at 09:14:30`**: a team note on the UTC clock, one file per author, shown in the
+  replay and the report.
+- **`dw seal <session>`** then **`dw sync <session> <disk>`**: copies what the team brought (raw, runs, notes),
+  never deletes at the destination, merges notes, and checks the copy against the seal. Encrypt the copy for
+  transport (e.g. age).
+
 ## Team
 
 - **`dw list`** shows every session in one table and writes `domeware-data/sessions/index.html`.

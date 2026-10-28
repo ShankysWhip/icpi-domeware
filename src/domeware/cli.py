@@ -15,6 +15,9 @@
   dw report SESSION           views/report.md
   dw view SESSION             open the replay (loopback only)
   dw check SESSION            in the field: is the data complete? (offline, seconds)
+  dw note SESSION "text"      a team note on the UTC clock (--at 09:14:30); shows in the replay and report
+  dw seal SESSION             record the hash of every file the team brought (seal.json)
+  dw sync SESSION DEST        copy the sealed session to DEST (e.g. an SSD), never delete there, check the copy
   dw verify SESSION           check raw files against their hashes
   dw info SESSION             show what is in the session
   dw list [ROOT]              all sessions in one table (+ ROOT/index.html)
@@ -42,8 +45,16 @@ def main(argv: list[str] | None = None) -> int:
         if name == "run":
             p.add_argument("--radius", type=float, default=3000.0, help="environment radius around the radar (m)")
             p.add_argument("--no-env", action="store_true", help="skip terrain/imagery download")
-    for name in ("convert", "replay", "verify", "info", "report", "view", "events", "check", "performance", "kml", "timeline"):
+    for name in ("convert", "replay", "verify", "info", "report", "view", "events", "check", "performance", "kml", "timeline", "seal"):
         sub.add_parser(name).add_argument("session", type=Path)
+    p = sub.add_parser("sync", help="copy a sealed session to another disk and check it")
+    p.add_argument("session", type=Path)
+    p.add_argument("dest", type=Path)
+    p = sub.add_parser("note", help="a team note on the UTC clock")
+    p.add_argument("session", type=Path)
+    p.add_argument("text")
+    p.add_argument("--at", help="UTC time: 09:14:30 (day from the session) or a full ISO time; default now")
+    p.add_argument("--author")
     p = sub.add_parser("runs", help="runs.csv: runs and phase windows")
     p.add_argument("session", type=Path)
     p.add_argument("--card", type=Path, help="phase times from a Run Scorecards export (JSON)")
@@ -77,6 +88,21 @@ def main(argv: list[str] | None = None) -> int:
         print(f"index: {(a.root or DEFAULT_ROOT) / 'index.html'}")
         return 0
     s = Session(a.session)
+    if a.cmd in ("seal", "sync"):
+        from domeware import custody
+
+        if a.cmd == "seal":
+            custody.seal(s)
+            return 0
+        problems = custody.sync(s, a.dest)
+        print(chr(10).join(problems) if problems else f"OK: copy at {a.dest / s.root.name} matches the seal")
+        return 1 if problems else 0
+    if a.cmd == "note":
+        from domeware import notes
+
+        r = notes.add(s, a.text, a.at, a.author)
+        print(f"note {r['t_utc']} ({r['author']}): {r['text']}")
+        return 0
     if a.cmd == "check":
         from domeware import check
 

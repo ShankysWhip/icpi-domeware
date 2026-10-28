@@ -16,6 +16,7 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
 from domeware.session import Session  # noqa: E402
+from domeware.stats import clopper_pearson  # noqa: E402
 
 
 def seconds_table(s: Session, gate_m: float = 50.0) -> pd.DataFrame:
@@ -63,11 +64,15 @@ def build(s: Session, gate_m: float = 50.0) -> dict | None:
         lo = np.floor(sec[col].clip(lower=0) / step) * step
         t = sec.assign(bin_lo=lo).groupby("bin_lo").agg(seconds=("detected", "size"), detected=("detected", "sum")).reset_index()
         t["share"] = t["detected"] / t["seconds"]
+        ci = [clopper_pearson(int(k), int(n)) for k, n in zip(t["detected"], t["seconds"], strict=True)]
+        t["ci95_low"], t["ci95_high"] = [c[0] for c in ci], [c[1] for c in ci]
         t["bin"] = t["bin_lo"].map(lambda v, st=step: f"{v:.0f}-{v + st:.0f}")
-        t[["bin", "seconds", "detected", "share"]].to_csv(s.views / f"performance_{col}.csv", index=False)
+        t[["bin", "seconds", "detected", "share", "ci95_low", "ci95_high"]].to_csv(s.views / f"performance_{col}.csv", index=False)
         out[col] = t
         bars = ax.bar(t["bin_lo"] + step / 2, t["share"] * 100, width=step * 0.85,
                       color=[(0.14, 0.34, 0.65, 0.35 if n < 10 else 0.9) for n in t["seconds"]])
+        ax.errorbar(t["bin_lo"] + step / 2, t["share"] * 100, yerr=[(t["share"] - t["ci95_low"]) * 100,
+                    (t["ci95_high"] - t["share"]) * 100], fmt="none", ecolor="#1d232a", elinewidth=0.8, capsize=2)
         for bar, n in zip(bars, t["seconds"], strict=True):
             ax.annotate(f"{n} s", (bar.get_x() + bar.get_width() / 2, bar.get_height()), ha="center", va="bottom", fontsize=7)
         ax.set_ylim(0, 110)
@@ -75,12 +80,15 @@ def build(s: Session, gate_m: float = 50.0) -> dict | None:
         ax.set_ylabel("airborne seconds with a radar track (%)")
         ax.grid(axis="y", alpha=0.3)
     fig.suptitle(f"Radar detection share by range and height ({sec['drone'].nunique()} drone(s), {len(sec)} drone-seconds; "
-                 "pale bars rest on < 10 s)", fontsize=10)
+                 "pale bars rest on < 10 s; whiskers: 95 % Clopper-Pearson, optimistic because seconds are not independent)",
+                 fontsize=9)
     fig.savefig(s.views / "performance.png", dpi=110, bbox_inches="tight")
     plt.close(fig)
     by_drone = sec.groupby("drone")["detected"].agg(["size", "mean"]).rename(columns={"size": "seconds", "mean": "share"})
+    lo, hi = clopper_pearson(int(sec["detected"].sum()), len(sec))
     s.manifest["performance"] = {"png": "views/performance.png", "drone_seconds": int(len(sec)),
                                  "share_overall": round(float(sec["detected"].mean()), 3),
+                                 "ci95_overall": [round(lo, 3), round(hi, 3)],
                                  "share_by_drone": {k: round(float(v), 3) for k, v in by_drone["share"].items()}}
     s.note(f"performance: {len(sec)} drone-seconds, tracked {sec['detected'].mean():.0%} -> views/performance.png")
     s.save()

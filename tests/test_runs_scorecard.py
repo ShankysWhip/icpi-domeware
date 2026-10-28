@@ -193,3 +193,52 @@ def test_timeline_one_row_per_second_with_each_drone(tmp_path):
     assert len(t) == 121 and t["t_utc"].diff().dropna().dt.total_seconds().eq(1).all()
     assert t["A_SIMULATED.radar_track_id"].dropna().eq(1).all() and t["B_SIMULATED.radar_track_id"].dropna().eq(2).all()
     assert (s.views / "timeline_1s.csv").exists()
+
+
+def test_run_validity_lists_every_reason(tmp_path):
+    s = _session(tmp_path)
+    runs.ensure(s)
+    [card] = scorecard.run(s)
+    assert card["validity"]["valid"] and card["validity"]["drone_seconds"] > 30
+    d = pd.read_parquet(s.streams / "truth" / "B_SIMULATED.parquet")
+    d.drop(index=range(40, 50)).to_parquet(s.streams / "truth" / "B_SIMULATED.parquet")  # 11 s with no truth in the air
+    [card] = scorecard.run(s)
+    assert not card["validity"]["valid"]
+    assert any("B_SIMULATED: truth lost for 11.0 s" in r for r in card["validity"]["reasons"])
+
+
+def test_notes_per_author_merge_in_time_order(tmp_path):
+    from domeware import notes
+
+    s = _session(tmp_path)
+    runs.ensure(s)
+    notes.add(s, "bird flock east of the radar", at="09:01:10", who="Aino")
+    notes.add(s, "drone B battery swap", at="09:00:30", who="Niklas")
+    df = notes.load(s)
+    assert df["author"].tolist() == ["Niklas", "Aino"]
+    assert df["t_utc"].iloc[0] == pd.Timestamp("2026-10-28 09:00:30", tz="UTC")
+    assert sorted(p.name for p in (s.root / "notes").glob("*.jsonl")) == ["Aino.jsonl", "Niklas.jsonl"]
+
+
+def test_seal_sync_never_deletes_and_merges_notes(tmp_path):
+    from domeware import custody, notes
+
+    src = tmp_path / "in"
+    src.mkdir()
+    (src / "a_SIMULATED.SRT").write_text("x")
+    s = Session(tmp_path / "S1")
+    s.ingest([src])
+    notes.add(s, "first", at="2026-10-28T09:00:00Z", who="Aino")
+    custody.seal(s)
+    ssd = tmp_path / "ssd"
+    assert custody.sync(s, ssd) == []
+    (ssd / "S1" / "keep_me.txt").write_text("someone else's file")
+    notes.add(s, "second", at="2026-10-28T09:05:00Z", who="Aino")
+    custody.seal(s)
+    assert custody.sync(s, ssd) == []
+    assert (ssd / "S1" / "keep_me.txt").exists()  # never deletes at the destination
+    assert len((ssd / "S1" / "notes" / "Aino.jsonl").read_text().splitlines()) == 2
+    raw = next((ssd / "S1" / "raw").rglob("*.SRT"))
+    raw.chmod(0o666)
+    raw.write_text("tampered")
+    assert any(p.startswith("changed: raw/") for p in custody.check_seal(ssd / "S1"))

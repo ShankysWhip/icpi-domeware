@@ -70,6 +70,12 @@ def build(s: Session) -> str:
                                                int((r.end_utc - r.start_utc).total_seconds()), r.notes] for r in rd.itertuples()],
                                              ["run", "part", "start UTC", "end UTC", "s", "from"]),
                "", "Edit `runs.csv` by hand, or add phase times from a scorecard export: `dw runs <session> --card <file>.json`.", ""]
+    from domeware import notes as N
+
+    nt = N.load(s)
+    if len(nt):
+        md += ["## Team notes", "", _tbl([[f"{r.t_utc:%H:%M:%S}" if pd.notna(r.t_utc) else "?", r.author, r.text]
+                                          for r in nt.itertuples()], ["UTC", "who", "note"]), ""]
     de = s.streams / "events" / "drone_events.parquet"
     if de.exists():
         d = pd.read_parquet(de)
@@ -79,7 +85,10 @@ def build(s: Session) -> str:
             md += [f"First 60 of {len(d)} events; all are in `streams/events/drone_events.parquet` and the replay's Events panel.", ""]
     for p in sorted(v.glob("scorecard_*.json")):
         c = json.loads(p.read_text(encoding="utf-8"))
+        val = c.get("validity") or {}
         md += [f"## Scorecard values: {c['run_id']}", "",
+               (f"**Run {'VALID' if val.get('valid') else 'NOT VALID'}**" + (": " + "; ".join(val["reasons"]) if val.get("reasons") else "")
+                + ("" if not val.get("warnings") else " (" + "; ".join(val["warnings"]) + ")")) if val else "", "",
                _tbl([[k, x["value"], x["note"]] for k, x in c["items"].items()], ["check", "value", "how measured"]), "",
                f"Import `{p.name}` on the Run Scorecards page (Import domeware values). Results stay with the reviewers.", ""]
 
@@ -87,6 +96,8 @@ def build(s: Session) -> str:
     if perf and (v / "performance.png").exists():
         md += ["## Detection by range and height", "",
                f"The radar had its own track on our drones for **{perf['share_overall']:.0%}** of {perf['drone_seconds']} "
+               + (f"(95 % CI {perf['ci95_overall'][0]:.0%}-{perf['ci95_overall'][1]:.0%}, Clopper-Pearson; optimistic, "
+                  "seconds are not independent) " if perf.get("ci95_overall") else "") +
                "airborne drone-seconds (" + ", ".join(f"{k} {x:.0%}" for k, x in perf["share_by_drone"].items()) + "). "
                "Measured share for these flights, not a general probability of detection; each bar shows its seconds.", "",
                "![performance](performance.png)", ""]

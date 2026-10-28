@@ -301,6 +301,36 @@ def items_for(part: str, m: dict, grid: pd.DataFrame, whole_run: bool, a, b, ext
     return items
 
 
+# Validity rules (decision doc, Phase 3). A void run is kept and counted, never deleted; the reason travels with it.
+MAX_TRUTH_GAP_S = 3.0
+MAX_RADAR_SILENCE_S = 10.0
+MIN_DRONE_SECONDS = 30
+
+
+def validity(m: dict, grid: pd.DataFrame, extra: dict) -> dict:
+    """Can this run's numbers be used? Every rule that fails is listed; warnings do not void the run."""
+    reasons, warnings = [], []
+    flying = {k: r["truth"] for k, r in m["per"].items()}
+    if not flying:
+        reasons.append("no drone flew in the run window")
+    for k, d in flying.items():
+        air = d[d["h_rel_takeoff_m"] > 2.0]
+        g = air["t_utc"].diff().dt.total_seconds().max() if len(air) > 1 else 0.0
+        if g > MAX_TRUTH_GAP_S:
+            reasons.append(f"drone {k}: truth lost for {g:.1f} s (limit {MAX_TRUTH_GAP_S:.0f} s)")
+    gap = extra.get("radar_gap")
+    if gap is None:
+        reasons.append("no radar data in the run window")
+    elif gap > MAX_RADAR_SILENCE_S:
+        reasons.append(f"radar silent for {gap:.0f} s (limit {MAX_RADAR_SILENCE_S:.0f} s)")
+    n = len(grid)
+    if n < MIN_DRONE_SECONDS:
+        warnings.append(f"only {n} airborne drone-seconds: shares from this run say little")
+    return {"valid": not reasons, "reasons": reasons, "warnings": warnings, "drone_seconds": n,
+            "rules": {"max_truth_gap_s": MAX_TRUTH_GAP_S, "max_radar_silence_s": MAX_RADAR_SILENCE_S,
+                      "min_drone_seconds": MIN_DRONE_SECONDS}}
+
+
 def run(s: Session, gate_m: float = 50.0, only: str | None = None) -> list[dict]:
     truths, tracks = _load(s)
     plots = load_plots(s)
@@ -349,6 +379,7 @@ def run(s: Session, gate_m: float = 50.0, only: str | None = None) -> list[dict]
                 "phases": {p: {"start": w[p][0].strftime("%H:%M:%S"), "end": w[p][1].strftime("%H:%M:%S")} for p in phases},
                 "items": dict(sorted(items.items())),
                 "whole_run": {k: v for k, v in whole.items() if k.startswith("BD")}}
+        card["validity"] = validity(m_run, grid, extra)
         if not phases:
             s.note(f"scorecard: {run_id}: no phase times, so only run-level checks are filled. Add them with "
                    f"dw runs {s.root.name} --card <scorecard export>.json, or P1-P4 rows in runs.csv")
@@ -356,6 +387,8 @@ def run(s: Session, gate_m: float = 50.0, only: str | None = None) -> list[dict]
         out.append(card)
         md += [f"## {run_id}  {a:%Y-%m-%d %H:%M:%S}-{b:%H:%M:%S} UTC", "",
                f"Drones: {', '.join(card['drones']) or 'none in this window'}. Phases: {', '.join(phases) or 'none in runs.csv (whole run used)'}.", "",
+               f"**Run {'VALID' if card['validity']['valid'] else 'NOT VALID'}**"
+               + (": " + "; ".join(card["validity"]["reasons"]) if card["validity"]["reasons"] else "") + "", "",
                "| check | value | how |", "|---|---|---|"]
         md += [f"| {k} | {v['value']} | {v['note']} |" for k, v in card["items"].items()]
         detected = grid.groupby("drone")["detected"].mean() if len(grid) else pd.Series(dtype=float)
