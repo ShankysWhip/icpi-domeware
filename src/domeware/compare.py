@@ -253,12 +253,10 @@ def run(s: Session, gate_m: float = 50.0, airborne_m: float = 2.0) -> list[dict]
                        f"take-off > {airborne_m:.0f} m. Horizontal error is the primary figure; vertical depends on the radar's "
                        f"altitude datum (unverified).\n"]
     loaded = {}
+    from domeware.replay import read_truth
+
     for f in truths:
-        tr = pd.read_parquet(f)
-        tr["t_utc"] = pd.to_datetime(tr["t_utc"], utc=True)
-        if "h_rel_takeoff_m" not in tr and "height_rel_takeoff_m" in tr:
-            tr["h_rel_takeoff_m"] = tr["height_rel_takeoff_m"]
-        loaded[f] = tr
+        loaded[f] = read_truth(f)
     owner = assign_tracks({f.stem: d for f, d in loaded.items() if {"e_m", "n_m", "u_m"} <= set(d.columns)}, tracks, gate_m)
     plots = load_plots(s)
     for f, tr in loaded.items():

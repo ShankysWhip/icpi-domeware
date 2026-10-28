@@ -47,28 +47,46 @@ def check_seal(root: Path) -> list[str]:
         f = root / rel
         if not f.exists():
             problems.append(f"missing: {rel}")
-        elif not rel.startswith(("notes/", "manifest.json")) and sha256_file(f) != sha:
-            problems.append(f"changed: {rel}")  # notes grow and the manifest logs; raw and runs must match exactly
+        elif rel.startswith("raw/") and sha256_file(f) != sha:
+            problems.append(f"changed: {rel}")  # raw must match exactly; team files may have grown at the destination
     return problems
 
 
 def _merge_lines(src: Path, dst: Path) -> None:
-    have = dst.read_text(encoding="utf-8").splitlines() if dst.exists() else []
-    new = [ln for ln in src.read_text(encoding="utf-8").splitlines() if ln.strip() and ln not in set(have)]
+    have = set(dst.read_text(encoding="utf-8").splitlines()) if dst.exists() else set()
+    new = list(dict.fromkeys(ln for ln in src.read_text(encoding="utf-8").splitlines() if ln.strip() and ln not in have))
     if new:
         with open(dst, "a", encoding="utf-8") as f:
             f.write(("\n" if have and not dst.read_text(encoding="utf-8").endswith("\n") else "") + "\n".join(new) + "\n")
 
 
+def _merge_runs(src: Path, dst: Path) -> bool:
+    """runs.csv: every row the destination has stays; rows only the source has are added. True if rows conflicted."""
+    import pandas as pd
+
+    a, b = pd.read_csv(dst, dtype=str, keep_default_na=False), pd.read_csv(src, dtype=str, keep_default_na=False)
+    key = ["run_id", "part"]
+    both = b.merge(a[key + ["start_utc", "end_utc"]], on=key, how="inner", suffixes=("", "_dst"))
+    conflict = bool(((both["start_utc"] != both["start_utc_dst"]) | (both["end_utc"] != both["end_utc_dst"])).any())
+    add = b.merge(a[key], on=key, how="left", indicator=True)
+    add = add[add["_merge"] == "left_only"].drop(columns="_merge")
+    if len(add):
+        pd.concat([a, add], ignore_index=True).to_csv(dst, index=False)
+    return conflict
+
+
 def sync(s: Session, dest: Path) -> list[str]:
-    if not (s.root / "seal.json").exists():
-        seal(s)
+    """Returns problems (empty = good). Team files that differ at the destination are never overwritten: runs.csv
+    rows are merged, other files are kept and the incoming version is written next to them as *.incoming-<utc>."""
+    seal(s)  # always fresh: what is copied is what is checked
     target = Path(dest) / s.root.name
     if target.exists() and (target / "manifest.json").exists():
         other = json.loads((target / "manifest.json").read_text(encoding="utf-8"))
         if other.get("session_id") != s.manifest["session_id"]:
             raise SystemExit(f"{target} holds a different session (id {other.get('session_id')}): nothing copied")
     copied = skipped = 0
+    kept: list[str] = []
+    stamp = now_utc().replace(":", "").replace("-", "")
     for f in [*_files(s.root), s.root / "seal.json"]:
         rel = f.relative_to(s.root)
         out = target / rel
@@ -81,10 +99,26 @@ def sync(s: Session, dest: Path) -> list[str]:
             continue
         if out.exists() and rel.parts[0] == "raw":
             raise SystemExit(f"{out} exists with different content: raw files are never overwritten")
+        if out.exists() and rel.as_posix() == "runs.csv":
+            if _merge_runs(f, out):
+                kept.append("runs.csv: some run times differ at the destination; its rows were kept")
+            continue
+        if out.exists() and rel.as_posix() == "manifest.json":
+            mine, theirs = json.loads(f.read_text(encoding="utf-8")), json.loads(out.read_text(encoding="utf-8"))
+            have = {r["sha256"] for r in theirs["raw"]}
+            theirs["raw"] += [r for r in mine["raw"] if r["sha256"] not in have]  # their streams and log stay theirs
+            out.chmod(0o666)
+            out.write_text(json.dumps(theirs, indent=2, default=str), encoding="utf-8")
+            continue
+        if out.exists() and rel.as_posix() != "seal.json":  # cards, video_offsets, image_clocks: theirs stays
+            side = out.with_name(f"{out.stem}.incoming-{stamp}{out.suffix}")
+            shutil.copy2(f, side)
+            kept.append(f"{rel.as_posix()}: differs at the destination; kept theirs, yours is {side.name}")
+            continue
         if out.exists():
-            out.chmod(0o666)  # manifest/runs/seal are replaced by the sealed source; raw never reaches here
+            out.chmod(0o666)
         shutil.copy2(f, out)
         copied += 1
-    problems = check_seal(target)
+    problems = check_seal(target) + kept
     s.note(f"sync: {copied} copied, {skipped} already there -> {target}; check: {'OK' if not problems else problems}")
     return problems

@@ -262,3 +262,47 @@ def test_team_scorecard_kept_and_shown_next_to_measured(tmp_path):
     assert "## Team scorecard: SIM-1" in text and "Red team wins from Blue fails: **1**" in text
     assert "| BD1 | 900 | seen late |" in text  # the fail and its reason
     assert "| BD1 | Fail | 900 |" in text  # team entry next to the measured value
+
+
+def test_review_fixes_hold(tmp_path):
+    """Second review: each case below failed before its fix."""
+    from domeware import custody, images
+    from domeware.replay import unique_stem
+
+    # DJI cards share DCIM/100MEDIA: the drone folder must survive in the name
+    a = tmp_path / "S" / "raw" / "dji_srt" / "droneA" / "DCIM" / "100MEDIA" / "DJI_0001.SRT"
+    b = tmp_path / "S" / "raw" / "dji_srt" / "droneB" / "DCIM" / "100MEDIA" / "DJI_0001.SRT"
+    assert unique_stem(a, [a, b]) != unique_stem(b, [a, b])
+    # a radar that tracked nothing, with no status stream: a 0 % run, not a void one
+    s = _session(tmp_path)
+    tr = pd.read_parquet(s.streams / "radar" / "tracks.parquet")
+    tr.assign(t_utc=tr["t_utc"] + pd.Timedelta(hours=1)).to_parquet(s.streams / "radar" / "tracks.parquet")  # nothing in the run
+    runs.ensure(s)
+    [card] = scorecard.run(s)
+    assert card["validity"]["valid"] and any("liveness unknown" in w for w in card["validity"]["warnings"])
+    # a hand-written part survives the next card import
+    (s.root / "runs.csv").write_text(s.root.joinpath("runs.csv").read_text() + "R1,SETUP,2026-10-28T08:59:00Z,2026-10-28T09:00:00Z,\n")
+    c = tmp_path / "c.json"
+    c.write_text(json.dumps({"run": {"run_id": "R1", "date": "2026-10-28"},
+                             "phases": {"P1": {"start": "09:00:10", "end": "09:00:40"}}}))
+    runs.import_card(s, c)
+    assert "SETUP" in runs.load(s)["part"].tolist()
+    # sync keeps the destination's runs.csv rows and its own card
+    ssd = tmp_path / "ssd"
+    custody.sync(s, ssd)
+    with open(ssd / s.root.name / "runs.csv", "a") as f:
+        f.write("R1,P4,2026-10-28T09:01:50Z,2026-10-28T09:02:00Z,added on the shared disk\n")
+    (ssd / s.root.name / "cards" / "R1.json").write_text("{}")
+    problems = custody.sync(s, ssd)
+    assert "P4" in pd.read_csv(ssd / s.root.name / "runs.csv")["part"].tolist()
+    assert (ssd / s.root.name / "cards" / "R1.json").read_text() == "{}"
+    assert any("cards/R1.json" in p for p in problems)
+    # a typo in a clock name leaves the picture out instead of crashing
+    (s.raw / "image" / "PR200").mkdir(parents=True)
+    from PIL import Image
+
+    Image.new("RGB", (4, 4)).save(s.raw / "image" / "PR200" / "Screenshot_2026-10-28_11-00-00.png")
+    s.manifest["raw"].append({"path": "raw/image/PR200/Screenshot_2026-10-28_11-00-00.png", "role": "image", "sha256": "x", "size": 1})
+    (s.root / "image_clocks.csv").write_text("match,clock\nPR200,Europe/Helsinky\n")
+    [p] = images.pictures(s)
+    assert p["t_utc"] is None and p["method"].startswith("left out")

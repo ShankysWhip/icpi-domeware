@@ -19,7 +19,7 @@ import pandas as pd
 
 from domeware import runs as R
 from domeware.compare import _interp_truth, _ns, assign_tracks, compare_one, load_plots
-from domeware.replay import truth_files
+from domeware.replay import read_truth, truth_files
 from domeware.session import Session, now_utc
 
 FORMAT = "domeware-scorecard/1"
@@ -29,12 +29,9 @@ PHASE_OF = {"P1": "BL", "P2": "BD", "P3": "BA", "P4": "BH"}
 def _load(s: Session) -> tuple[dict[str, pd.DataFrame], pd.DataFrame]:
     truths = {}
     for f in truth_files(s):
-        d = pd.read_parquet(f)
-        if "h_rel_takeoff_m" not in d and "height_rel_takeoff_m" in d:
-            d["h_rel_takeoff_m"] = d["height_rel_takeoff_m"]
+        d = read_truth(f)
         d = d.dropna(subset=["e_m", "n_m", "u_m"]) if {"e_m", "n_m", "u_m"} <= set(d.columns) else d.iloc[0:0]
         if len(d):
-            d["t_utc"] = pd.to_datetime(d["t_utc"], utc=True)
             truths[f.stem] = d.sort_values("t_utc").reset_index(drop=True)
     radars = [s.streams / n / "tracks.parquet" for n in s.manifest["streams"] if (s.streams / n / "tracks.parquet").exists()]
     tracks = pd.concat([pd.read_parquet(p) for p in radars], ignore_index=True) if radars else pd.DataFrame()
@@ -210,11 +207,13 @@ def items_for(part: str, m: dict, grid: pd.DataFrame, whole_run: bool, a, b, ext
             se, d5 = _worst(det, sp_err, max)
             put("BD3", _fmt(se, 1), f"median |radar speed - GPS ground speed|, worst drone; {d5}")
             def class_drops(r):
-                on = r["on"].sort_values("t_utc")
-                if "class_name" not in on or on.empty:
+                if "class_name" not in r["on"] or r["on"].empty:
                     return None
-                is_d = on["class_name"].eq("DRONE").to_numpy()
-                return float(np.sum(is_d[:-1] & ~is_d[1:]))
+                total = 0
+                for _, g in r["on"].sort_values("t_utc").groupby("track_id"):  # a new track is not a lost class
+                    is_d = g["class_name"].eq("DRONE").to_numpy()
+                    total += int(np.sum(is_d[:-1] & ~is_d[1:]))
+                return float(total)
             cd, dcd = _worst(det, class_drops, max)
             put("BD9", _fmt(cd, 0), f"times a drone track lost its DRONE class, worst drone; {dcd}")
             mg, sw = merges_swaps({k: r["truth"] for k, r in per.items()}, m["tracks"], extra.get("gate_m", 50.0))
@@ -243,19 +242,23 @@ def items_for(part: str, m: dict, grid: pd.DataFrame, whole_run: bool, a, b, ext
                             r["delay_airborne_to_first_alarm_s"] - r["delay_airborne_to_first_track_s"], max)
             put("BA2", _fmt(da, 1), f"first track to first alarm, slowest drone; {d8}")
             def dropped(r):
-                on = r["on"].sort_values("t_utc")
-                al = on["alarm"].fillna(False).astype(bool).to_numpy()
-                if not al.any():
+                on = r["on"]
+                if not on["alarm"].fillna(False).astype(bool).any():
                     return None
-                k = int(np.argmax(al))
-                dt = on["t_utc"].diff().dt.total_seconds().shift(-1).fillna(0).to_numpy()
-                return float(dt[k:][~al[k:]].sum())
+                total = 0.0
+                for _, g in on.sort_values("t_utc").groupby("track_id"):
+                    al = g["alarm"].fillna(False).astype(bool).to_numpy()
+                    if al.any():
+                        k = int(np.argmax(al))
+                        dt = g["t_utc"].diff().dt.total_seconds().shift(-1).fillna(0).to_numpy()
+                        total += float(dt[k:][~al[k:]].sum())
+                return total
             dr, d9 = _worst(det, dropped, max)
             put("BA5", _fmt(dr, 1), f"seconds without alarm after the first alarm, worst drone; {d9}")
             def warning(r):
-                on, tr_ = r["on"], r["truth"]
+                on, tr_ = r["on"], r["truth"][r["truth"]["h_rel_takeoff_m"] > 2.0]
                 al = on[on["alarm"].fillna(False).astype(bool)]
-                if al.empty:
+                if al.empty or tr_.empty:
                     return None
                 close = tr_.loc[np.sqrt(tr_["e_m"] ** 2 + tr_["n_m"] ** 2 + tr_["u_m"] ** 2).idxmin(), "t_utc"]
                 return (close - al["t_utc"].iloc[0]).total_seconds()
@@ -339,11 +342,16 @@ def validity(m: dict, grid: pd.DataFrame, extra: dict) -> dict:
         g = air["t_utc"].diff().dt.total_seconds().max() if len(air) > 1 else 0.0
         if g > MAX_TRUTH_GAP_S:
             reasons.append(f"drone {k}: truth lost for {g:.1f} s (limit {MAX_TRUTH_GAP_S:.0f} s)")
-    gap = extra.get("radar_gap")
-    if gap is None:
-        reasons.append("no radar data in the run window")
-    elif gap > MAX_RADAR_SILENCE_S:
-        reasons.append(f"radar silent for {gap:.0f} s (limit {MAX_RADAR_SILENCE_S:.0f} s)")
+    gap, live = extra.get("radar_gap"), extra.get("radar_liveness")
+    if live == "status":  # status messages prove the radar was on: silence there voids the run
+        if gap is None:
+            reasons.append("no radar status messages in the run window")
+        elif gap > MAX_RADAR_SILENCE_S:
+            reasons.append(f"radar silent for {gap:.0f} s (limit {MAX_RADAR_SILENCE_S:.0f} s)")
+    elif extra.get("radar_outside"):
+        reasons.append("no radar data in the session")
+    else:  # only track updates: a quiet sky looks the same as a radar that was off
+        warnings.append("radar liveness unknown (no status stream): missed drones count as not detected")
     n = len(grid)
     if n < MIN_DRONE_SECONDS:
         warnings.append(f"only {n} airborne drone-seconds: shares from this run say little")
@@ -381,9 +389,13 @@ def run(s: Session, gate_m: float = 50.0, only: str | None = None) -> list[dict]
             st = pd.concat([pd.read_parquet(p, columns=["t_utc"]) for p in status])
             extra["radar_gap"] = _gap_window(pd.to_datetime(st["t_utc"], utc=True), a, b)
             extra["radar_gap_note"] = "longest time between radar status messages in the run"
+            extra["radar_liveness"] = "status"
         elif len(tracks):
             extra["radar_gap"] = _gap_window(tracks["t_utc"], a, b)
             extra["radar_gap_note"] = "longest time between radar track updates in the run (no status stream; quiet sky also counts)"
+            extra["radar_liveness"] = "tracks"
+        else:
+            extra["radar_outside"] = True  # no radar output in the session at all
         phases = [p for p in ("P1", "P2", "P3", "P4") if p in w]
         if phases and len(tracks):
             extra["phases_found"] = f"{sum(1 for p in phases if len(_cut(tracks, *w[p])))}/{len(phases)}"
@@ -394,7 +406,7 @@ def run(s: Session, gate_m: float = 50.0, only: str | None = None) -> list[dict]
             for k, v in items_for(part, measure(truths, tracks, pa, pb, gate_m, plots=plots), gp, False, pa, pb, {"gate_m": gate_m}).items():
                 items.setdefault(k, v)
         # whole-run detection numbers for the report; not imported into phase checks
-        whole = items_for("P2", m_run, grid, True, a, b, {})
+        whole = items_for("P2", m_run, grid, True, a, b, {"gate_m": gate_m})
         card = {"format": FORMAT, "source": f"domeware session {s.root.name}", "run_id": run_id, "generated_utc": now_utc(),
                 "gate_m": gate_m, "drones": sorted(m_run["per"]),
                 "phases": {p: {"start": w[p][0].strftime("%H:%M:%S"), "end": w[p][1].strftime("%H:%M:%S")} for p in phases},

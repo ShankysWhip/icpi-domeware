@@ -11,7 +11,7 @@ from xml.sax.saxutils import escape
 
 import pandas as pd
 
-from domeware.replay import DRONE_RGB, read_truth, truth_files
+from domeware.replay import drone_colours, read_truth, truth_files
 from domeware.session import Session
 
 
@@ -20,7 +20,7 @@ def _abgr(rgb, a=255) -> str:
 
 
 def _track(name: str, d: pd.DataFrame, alt_col: str | None, rgb, mode: str) -> str:
-    d = d.dropna(subset=["lat_deg", "lon_deg"]).copy()
+    d = d.dropna(subset=["lat_deg", "lon_deg", *([alt_col] if alt_col else [])]).copy()
     d["t_utc"] = pd.to_datetime(d["t_utc"], utc=True)
     d = d.sort_values("t_utc").groupby(d["t_utc"].dt.floor("1s")).first()
     if d.empty:
@@ -42,7 +42,7 @@ def build(s: Session) -> str | None:
 
         owner = {int(k): v for k, v in (json.loads(rp.read_text(encoding="utf-8")).get("track_owner") or {}).items()}
     drones = [f for f in truth_files(s)]
-    colour = {f.stem: DRONE_RGB[i % len(DRONE_RGB)] for i, f in enumerate(drones)}
+    colour = drone_colours(s)
     for f in drones:
         d = read_truth(f)
         if {"lat_deg", "lon_deg", "h_rel_takeoff_m"} <= set(d.columns):

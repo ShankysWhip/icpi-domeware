@@ -225,6 +225,11 @@ def truth_files(s: Session) -> list[Path]:
     return sorted(s.streams.glob("truth/*.parquet")) + sorted(s.streams.glob("dji/*_osd.parquet"))
 
 
+def drone_colours(s: Session) -> dict[str, list[int]]:
+    """The same colour for a drone in the replay, the KML and every picture: in truth-file order."""
+    return {f.stem: DRONE_RGB[i % len(DRONE_RGB)] for i, f in enumerate(truth_files(s))}
+
+
 def read_truth(f: Path) -> pd.DataFrame:
     """A truth stream with the common column names (DJI CSV writes height_rel_takeoff_m) and UTC times."""
     d = pd.read_parquet(f)
@@ -237,9 +242,13 @@ def read_truth(f: Path) -> pd.DataFrame:
 def unique_stem(f: Path, others: list[Path]) -> str:
     """Stream name for a raw file. Drones often share file names (every DJI starts at DJI_0001): then the folder the
     file came from is added, so one drone never overwrites another."""
-    if sum(1 for o in others if o.stem.lower() == f.stem.lower()) > 1:
-        return f"{f.parent.name}_{f.stem}"
-    return f.stem
+    if sum(1 for o in others if o.stem.lower() == f.stem.lower()) <= 1:
+        return f.stem
+    parts = [p.lower() for p in f.parts]
+    if "raw" in parts:  # raw/<role>/<drone>/DCIM/100MEDIA/DJI_0001.SRT -> <drone>_DCIM_100MEDIA_DJI_0001
+        i = len(parts) - 1 - parts[::-1].index("raw")
+        return "_".join(f.with_suffix("").parts[i + 2:])
+    return f"{f.parent.name}_{f.stem}"
 
 
 def _ts(series: pd.Series) -> np.ndarray:
@@ -311,7 +320,7 @@ def build(s: Session) -> dict:
         d = d.dropna(subset=["t_utc", "e_m", "n_m", "u_m"]).sort_values("t_utc")
         if len(d):
             truths[f.stem] = d
-    drone_rgb = {k: DRONE_RGB[i % len(DRONE_RGB)] for i, k in enumerate(truths)}
+    drone_rgb = drone_colours(s)
     owner: dict[int, str] = {}  # radar track id -> drone it was (nearest drone, gate 50 m; same rule as dw compare)
     all_tracks = []
     for name, info_s in s.manifest["streams"].items():

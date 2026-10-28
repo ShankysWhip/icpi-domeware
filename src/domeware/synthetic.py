@@ -20,7 +20,9 @@ def radar_from_truth(truth: pd.DataFrame, *, update_s: float = 1.0, latency_s: f
     rng = np.random.default_rng(seed)
     t0, t1 = truth["t_utc"].iloc[0], truth["t_utc"].iloc[-1]
     t_true = pd.date_range(t0, t1, freq=pd.Timedelta(seconds=update_s))
-    tt = pd.to_datetime(truth["t_utc"], utc=True).dt.as_unit("ns").astype("int64").to_numpy()
+    from domeware.compare import _ns
+
+    tt = _ns(truth["t_utc"])
     x = t_true.as_unit("ns").asi8
     pos = np.column_stack([np.interp(x, tt, truth[c].to_numpy()) for c in ("e_m", "n_m", "u_m")])
     pos = pos + np.asarray(bias_enu_m) + rng.normal(0.0, noise_m, pos.shape) * (noise_m > 0)

@@ -88,8 +88,11 @@ def convert_dji_csv(s: Session) -> None:
         osd, events, meta = D.convert(df, opts)
         out = s.streams / "dji"
         out.mkdir(parents=True, exist_ok=True)
-        pq.write_table(osd, out / f"{f.stem}_osd.parquet")
-        pq.write_table(events, out / f"{f.stem}_events.parquet")
+        from domeware.replay import unique_stem
+
+        name = unique_stem(f, s.raw_files("dji_csv"))
+        pq.write_table(osd, out / f"{name}_osd.parquet")
+        pq.write_table(events, out / f"{name}_events.parquet")
         (out / f"{f.stem}_meta.json").write_text(json.dumps(meta, indent=2, default=str), encoding="utf-8")
         s.manifest["streams"][f"dji/{f.stem}"] = {"adapter": f"dji {D.CONVERTER_VERSION}", "rows": osd.num_rows,
                                                   "ground_from_dem": ground is not None}

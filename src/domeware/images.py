@@ -64,7 +64,7 @@ def pictures(s: Session) -> list[dict]:
                 continue
             local = pd.Timestamp(f"{m[1]}-{m[2]}-{m[3]}T{m[4]}:{m[5]}:{m[6]}")
             out.append({"file": f, "group": group, "t_utc": _to_utc(local, rule), "method": f"file name, clock {rule}"})
-        except (ValueError, TypeError) as e:  # a bad declaration is reported, never guessed around
+        except Exception as e:  # noqa: BLE001 - unknown zone, DST gap or overlap, typo: reported, never guessed around
             out.append({"file": f, "group": group, "t_utc": None, "method": f"left out: {e}"})
     return out
 

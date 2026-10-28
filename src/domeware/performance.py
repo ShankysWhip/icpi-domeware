@@ -44,11 +44,6 @@ def seconds_table(s: Session, gate_m: float = 50.0) -> pd.DataFrame:
     return pd.concat(rows, ignore_index=True)
 
 
-def _bins(x: pd.Series, step: float) -> pd.Series:
-    lo = np.floor(x / step) * step
-    return lo.map(lambda v: f"{v:.0f}-{v + step:.0f}")
-
-
 def build(s: Session, gate_m: float = 50.0) -> dict | None:
     sec = seconds_table(s, gate_m)
     if sec.empty:

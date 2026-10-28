@@ -73,10 +73,10 @@ def run(s: Session, radar_gap_s: float = 10.0, log_gap_s: float = 3.0) -> int:
     if not files:
         fail("no drone positions: save the drone logs (.bin / .tlog / .SRT / DJI CSV / RTKLIB .pos)")
     for f in files:
-        d = pd.read_parquet(f)
-        d["t_utc"] = pd.to_datetime(d["t_utc"], utc=True)
-        d = d.sort_values("t_utc")
-        h = d["h_rel_takeoff_m"] if "h_rel_takeoff_m" in d else d.get("height_rel_takeoff_m")
+        from domeware.replay import read_truth
+
+        d = read_truth(f).sort_values("t_utc")
+        h = d.get("h_rel_takeoff_m")
         air = d[h > 2.0] if h is not None else d.iloc[0:0]
         if d.empty:
             fail(f"drone {f.stem}: no positions")

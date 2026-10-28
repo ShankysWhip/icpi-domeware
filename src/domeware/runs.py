@@ -64,8 +64,8 @@ def _write(s: Session, df: pd.DataFrame) -> None:
     out = df.copy()
     for c in ("start_utc", "end_utc"):
         out[c] = pd.to_datetime(out[c], utc=True).dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ").str.replace(".000000Z", "Z")
-    out["part"] = pd.Categorical(out["part"], PARTS, ordered=True)
-    out.sort_values(["start_utc", "run_id", "part"]).to_csv(runs_path(s), index=False)
+    order = out["part"].map({p: i for i, p in enumerate(PARTS)}).fillna(len(PARTS))  # unknown parts kept as written
+    out.assign(_o=order).sort_values(["start_utc", "run_id", "_o"]).drop(columns="_o").to_csv(runs_path(s), index=False)
 
 
 def load(s: Session) -> pd.DataFrame:
@@ -118,7 +118,15 @@ def import_card(s: Session, card: Path) -> pd.DataFrame:
     keep_dir = s.root / "cards"
     keep_dir.mkdir(parents=True, exist_ok=True)
     safe = re.sub(r"[^A-Za-z0-9_.-]+", "-", run_id)[:120]
-    (keep_dir / f"{safe}.json").write_text(json.dumps(c, indent=1, ensure_ascii=False), encoding="utf-8")  # latest export wins
+    if safe != run_id:  # 'R 1' and 'R-1' must not share a file
+        import hashlib
+
+        safe += "-" + hashlib.sha256(run_id.encode()).hexdigest()[:6]
+    dst = keep_dir / f"{safe}.json"
+    text = json.dumps(c, indent=1, ensure_ascii=False)
+    if dst.exists() and dst.read_text(encoding="utf-8") != text:  # the earlier export is kept, renamed
+        dst.rename(keep_dir / f"{safe}.{dst.stat().st_mtime_ns}.json")
+    dst.write_text(text, encoding="utf-8")
     s.note(f"cards: {run_id}: scorecard kept as cards/{safe}.json")
     df = ensure(s)
     day = (run.get("date") or "").strip()

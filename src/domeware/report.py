@@ -11,7 +11,8 @@ from domeware.session import Session, now_utc
 
 def _tbl(rows: list[list], head: list[str]) -> str:
     out = ["| " + " | ".join(head) + " |", "|" + "---|" * len(head)]
-    out += ["| " + " | ".join("" if v is None else str(v) for v in r) + " |" for r in rows]
+    cell = lambda v: "" if v is None else str(v).replace("|", "\\|").replace("\n", " ")  # noqa: E731 - notes may hold | or newlines
+    out += ["| " + " | ".join(cell(v) for v in r) + " |" for r in rows]
     return "\n".join(out)
 
 
