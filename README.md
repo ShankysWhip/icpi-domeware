@@ -172,6 +172,17 @@ exports (CSV or the analyser's own format) get an adapter once a real sample fil
   and the radar's altitude datum is still unverified.
 - The schema is fetched by `dw setup` (hash-pinned) and is not copied into this repo: its repository has no licence.
 
+## Test sites and simulated runs
+
+- **`dw site save <session> <name>`** keeps a test site (the radar's declared position and orientation) as a named
+  profile in `domeware-data/sites/<name>/site.json`, outside git. `dw site list` shows them. OuluZone is saved as
+  `ouluzone`.
+- **`dw simulate <site> <new session> --drones 2 --latency 0.5 --noise 4`** puts a SIMULATED run at that exact place,
+  in its real terrain, photo, buildings and forest: the pilot's phase profile at small-drone speeds (P1 two low
+  crossings at 5 m, P2 out to 2 km and back, P3 approach to a 200 m stand-off, P4 hover), runs.csv with the phase
+  windows, and radar tracks with the stated latency, noise and missed updates. Then `dw run` as for real data.
+  Useful to rehearse a test day, train the team on the tools, and check that a scoring change does what it should.
+
 ## Team
 
 - **`dw list`** shows every session in one table and writes `domeware-data/sessions/index.html`.

@@ -24,6 +24,8 @@
   dw list [ROOT]              all sessions in one table (+ ROOT/index.html)
   dw doctor                   check this laptop has everything domeware needs
   dw setup                    new laptop: fetch the height grids and leap-second list, then run doctor
+  dw site save SESSION NAME   keep a test site (radar position) as a named profile; dw site list
+  dw simulate SITE SESSION    a SIMULATED phase-profile run at a saved site, in its real environment
 """
 
 from __future__ import annotations
@@ -66,6 +68,19 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("list", help="all sessions in one table").add_argument("root", type=Path, nargs="?")
     sub.add_parser("doctor", help="check this laptop")
     sub.add_parser("setup", help="fetch height grids and leap-second list, then doctor")
+    p = sub.add_parser("site", help="test-site profiles")
+    p.add_argument("action", choices=["save", "list"])
+    p.add_argument("session", type=Path, nargs="?")
+    p.add_argument("name", nargs="?")
+    p = sub.add_parser("simulate", help="SIMULATED run at a saved site")
+    p.add_argument("site")
+    p.add_argument("out", type=Path)
+    p.add_argument("--drones", type=int, default=1)
+    p.add_argument("--latency", type=float, default=0.4)
+    p.add_argument("--noise", type=float, default=4.0)
+    p.add_argument("--miss", type=float, default=0.05)
+    p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--spacing", type=float, default=60.0, help="metres between drones")
     p = sub.add_parser("env")
     p.add_argument("session", type=Path)
     p.add_argument("--radius", type=float, default=3000.0)
@@ -73,6 +88,22 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("session", type=Path)
     p.add_argument("--gate", type=float, default=50.0, help="association gate, metres (median 3D distance)")
     a = ap.parse_args(argv)
+    if a.cmd == "site":
+        from domeware import sites
+
+        if a.action == "list":
+            print(chr(10).join(sites.list_sites()) or "no site profiles yet: dw site save <session> <name>")
+            return 0
+        if not (a.session and a.name):
+            raise SystemExit("usage: dw site save <session> <name>")
+        print(f"saved {sites.save(Session(a.session), a.name)}")
+        return 0
+    if a.cmd == "simulate":
+        from domeware import sites
+
+        s = sites.simulate(a.site, a.out, a.drones, a.latency, a.noise, a.miss, a.seed, spacing_m=a.spacing)
+        print(f"SIMULATED session at {s.root}: next, dw run {s.root} (or dw replay / dw scorecard / dw report)")
+        return 0
     if a.cmd == "setup":
         from domeware.overview import setup
 

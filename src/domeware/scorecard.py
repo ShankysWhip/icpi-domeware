@@ -124,6 +124,9 @@ def association_grid(m: dict, a, b) -> pd.DataFrame:
     return out
 
 
+SWAP_CONFIRM = 3
+
+
 def merges_swaps(cut: dict[str, pd.DataFrame], tracks: pd.DataFrame, gate_m: float) -> tuple[int, int]:
     """From every track state, not from the one-drone-per-track assignment (which hides both by design).
 
@@ -140,18 +143,30 @@ def merges_swaps(cut: dict[str, pd.DataFrame], tracks: pd.DataFrame, gate_m: flo
     st = pd.DataFrame(near, columns=names)
     st["sec"], st["tid"] = tracks["t_utc"].dt.floor("1s").to_numpy(), tracks["track_id"].to_numpy()
     merges = 0
-    multi_secs = set(st.loc[near.sum(axis=1) >= 2, "sec"])
-    for _sec, g in st[st["sec"].isin(multi_secs)].groupby("sec"):
-        per_tid = g.groupby("tid")[names].any()
-        for tid, row in per_tid.iterrows():
+    # a drone "has its own track" in a second if some other track is near it within +-2 s: one missed update is
+    # not a merge
+    own = {n: st.loc[st[n], ["sec", "tid"]] for n in names}
+    tol = pd.Timedelta(seconds=2)
+    for sec, g in st[near.sum(axis=1) >= 2].groupby("sec"):
+        for tid, row in g.groupby("tid")[names].any().iterrows():
             shared = [n for n in names if row[n]]
-            if len(shared) >= 2 and any(not per_tid.drop(index=tid)[n].any() for n in shared):
+            alone = [n for n in shared if not ((own[n]["tid"] != tid) & ((own[n]["sec"] - sec).abs() <= tol)).any()]
+            if len(shared) >= 2 and alone:
                 merges += 1
                 break
+    # a swap needs the new nearest drone to stay nearest for SWAP_CONFIRM updates: noise between close drones
+    # flips the nearest one back and forth without the track really changing drone
     lab = pd.DataFrame({"tid": st["tid"], "t": tracks["t_utc"].to_numpy(),
                         "lab": np.where(near.any(axis=1), dist.argmin(axis=1), -1)})
     lab = lab[lab["lab"] >= 0].sort_values("t")
-    swaps = int(sum((g["lab"].diff().fillna(0) != 0).sum() for _, g in lab.groupby("tid")))
+    swaps = 0
+    for _, g in lab.groupby("tid"):
+        current, run_lab, run_len = None, None, 0
+        for v in g["lab"]:
+            run_lab, run_len = (v, run_len + 1) if v == run_lab else (v, 1)
+            if run_len == SWAP_CONFIRM and v != current:
+                swaps += current is not None
+                current = v
     return merges, swaps
 
 
@@ -199,7 +214,7 @@ def items_for(part: str, m: dict, grid: pd.DataFrame, whole_run: bool, a, b, ext
                 f"median horizontal / vertical error, worst drone; horizontal per drone {dh}")
             def sp_err(r):
                 on, t = r["on"], r["truth"]
-                if "speed_mps" not in on or len(on) < 2:
+                if "speed_mps" not in on or len(on) < 2 or not on["speed_mps"].notna().any():
                     return None
                 ts = _speed(t)
                 v = np.interp(_ns(on["t_utc"]), _ns(t["t_utc"])[1:], ts.to_numpy()[1:])
