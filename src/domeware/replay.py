@@ -485,7 +485,7 @@ def build(s: Session) -> dict:
     rec.disconnect()
     bp.save("domeware-replay", str(s.views / "replay.rbl"))
     stats["rrd_mb"] = round(rrd.stat().st_size / 1e6, 1)
-    stats["quicklooks"] = quicklooks(s, site, focus_ids)
+    stats["quicklooks"] = quicklooks(s, site, focus_ids, owner)
     (s.views / "replay_stats.json").write_text(json.dumps(stats, indent=2, default=str), encoding="utf-8")
     s.manifest["views"] = {"replay": "views/replay.rrd", "stats": "views/replay_stats.json"}
     s.note(f"replay: views/replay.rrd ({stats['rrd_mb']} MB)")
@@ -493,35 +493,73 @@ def build(s: Session) -> dict:
     return stats
 
 
-def quicklooks(s: Session, site: dict, focus_ids: list) -> list[str]:
-    """Map over the orthophoto (TM35) with all tracks, plus range/height over time for the focus track."""
-    out = []
-    fig, ax = plt.subplots(figsize=(10, 10))
+def quicklooks(s: Session, site: dict, focus_ids: list, owner: dict | None = None) -> list[str]:
+    """Map over the orthophoto (TM35): the whole area, and a zoom on where the drones flew. Drones and the radar
+    tracks that were them in the replay's colours; other tracks cyan, alarming ones red."""
+    out, owner = [], owner or {}
+    colours = drone_colours(s)
+    hexc = {k: "#" + "".join(f"{c:02x}" for c in v) for k, v in colours.items()}
+    e0, n0 = LL_TO_TM35.transform(site["lon_deg"], site["lat_deg"])
+    ortho = None
     if (s.env / "ortho.tif").exists():
         with rasterio.open(s.env / "ortho.tif") as src:
             sc = max(1.0, max(src.width, src.height) / 2500)
-            img = src.read([1, 2, 3], out_shape=(3, int(src.height / sc), int(src.width / sc)))
-            b = src.bounds
-        ax.imshow(np.moveaxis(img, 0, -1), extent=(b.left, b.right, b.bottom, b.top))
-    e0, n0 = LL_TO_TM35.transform(site["lon_deg"], site["lat_deg"])
+            ortho = (np.moveaxis(src.read([1, 2, 3], out_shape=(3, int(src.height / sc), int(src.width / sc))), 0, -1), src.bounds)
+    lines = []  # (x, y, colour, width, label)
     for name in s.manifest["streams"]:
         tp = s.streams / name / "tracks.parquet"
         if tp.exists():
             tr = pd.read_parquet(tp)
             for tid, g in tr.groupby("track_id"):
                 x, y = LL_TO_TM35.transform(g["lon_deg"].to_numpy(), g["lat_deg"].to_numpy())
+                mine = owner.get(int(tid))
                 alarm = bool(g["alarm"].fillna(False).astype(bool).any())
-                ax.plot(x, y, "-", lw=2.2 if tid in focus_ids else 1, color="red" if alarm else "cyan")
+                lines.append((x, y, hexc.get(mine, "red" if alarm else "cyan"), 2.0 if mine or tid in focus_ids else 1.0,
+                              f"radar track {tid} = {mine}" if mine else None, ":" if mine else "-"))
+    drone_xy = []
     for f in truth_files(s):
-        d = pd.read_parquet(f, columns=["lat_deg", "lon_deg"]).dropna()
+        d = read_truth(f).dropna(subset=["lat_deg", "lon_deg"])
         x, y = LL_TO_TM35.transform(d["lon_deg"].to_numpy(), d["lat_deg"].to_numpy())
-        ax.plot(x, y, "-", lw=1.5, color="lime")
-    ax.plot([e0], [n0], "^", color="orange", ms=12)
-    ax.set_title(f"{site.get('name') or 'site'}: tracks (cyan, alarm = red), drone log (green), radar (orange)")
-    ax.set_xlabel("E (m, EPSG:3067)")
-    ax.set_ylabel("N (m, EPSG:3067)")
+        drone_xy.append((x, y))
+        lines.append((x, y, hexc.get(f.stem, "lime"), 2.2, f"drone {f.stem} (log)", "-"))
+    fig, axes = plt.subplots(1, 2, figsize=(17, 8.5), width_ratios=[1, 1])
+    for k, ax in enumerate(axes):
+        if ortho is not None:
+            img, b = ortho
+            ax.imshow(img, extent=(b.left, b.right, b.bottom, b.top))
+        for x, y, c, w, lab, style in lines:
+            ax.plot(x, y, style, lw=w, color=c, label=lab if k == 1 else None,
+                    marker="o" if style == ":" else None, ms=2.5)
+        ax.plot([e0], [n0], "^", color="orange", ms=12, markeredgecolor="black", label="radar" if k == 1 else None)
+        ax.set_xlabel("E (m, EPSG:3067)")
+        ax.set_ylabel("N (m, EPSG:3067)")
+        ax.ticklabel_format(useOffset=False, style="plain")
+    if ortho is not None:  # whole area = the photo; a far clutter track must not stretch it into white
+        b = ortho[1]
+        axes[0].set_xlim(b.left, b.right)
+        axes[0].set_ylim(b.bottom, b.top)
+    axes[0].set_title(f"{site.get('name') or 'site'}: whole area")
+    if drone_xy:
+        xs = np.concatenate([x for x, _ in drone_xy] + [[e0]])
+        ys = np.concatenate([y for _, y in drone_xy] + [[n0]])
+        half = max(150.0, 0.6 * max(np.nanmax(xs) - np.nanmin(xs), np.nanmax(ys) - np.nanmin(ys)))
+        cx, cy = (np.nanmax(xs) + np.nanmin(xs)) / 2, (np.nanmax(ys) + np.nanmin(ys)) / 2
+        axes[1].set_xlim(cx - half, cx + half)
+        axes[1].set_ylim(cy - half, cy + half)
+        if ortho is not None:  # the zoom gets the photo at full resolution, not the overview's thinned copy
+            from rasterio.windows import from_bounds
+
+            with rasterio.open(s.env / "ortho.tif") as src:
+                win = from_bounds(cx - half, cy - half, cx + half, cy + half, src.transform)
+                img = np.moveaxis(src.read([1, 2, 3], window=win, boundless=True), 0, -1)
+            axes[1].images[0].remove()
+            axes[1].imshow(img, extent=(cx - half, cx + half, cy - half, cy + half), zorder=0)
+        axes[1].set_title("where the drones flew")
+        axes[1].legend(loc="upper right", fontsize=8, framealpha=0.85)
+    else:
+        axes[1].set_visible(False)
     p = s.views / "quicklook_map.png"
-    fig.savefig(p, dpi=110, bbox_inches="tight")
+    fig.savefig(p, dpi=100, bbox_inches="tight")
     plt.close(fig)
     out.append(p.name)
     if (s.env / "los_min_agl.tif").exists():
