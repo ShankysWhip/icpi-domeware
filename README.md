@@ -133,7 +133,12 @@ All three run inside `dw run`.
   only when the drone turns; a hovering drone gives no time shift.
 - **Run validity**: every run in `dw scorecard` is VALID or NOT VALID with each reason (truth lost > 3 s, radar silent
   > 10 s, no drone flying). Void runs are kept and counted.
-- **Intervals**: shares carry a 95 % Clopper-Pearson interval and their n (decision D13).
+- **Intervals**: the headline detection share carries a 95 % interval from a bootstrap over flights (drone x run),
+  because seconds inside one flight are not independent; "flights with a radar track" uses Clopper-Pearson (D13).
+  With fewer than 3 flights the report says there are too few for an interval.
+- **Independent cross-check**: every run's scorecard also carries Stone Soup's SIAP metrics (Dstl, open source:
+  completeness, ambiguity, spuriousness, position and velocity accuracy, track number changes, longest segment), so
+  a disputed number can be shown with a published method nobody here wrote.
 
 ## Notes and moving data
 

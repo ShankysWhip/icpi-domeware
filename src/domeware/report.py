@@ -115,15 +115,28 @@ def build(s: Session) -> str:
                 + ("" if not val.get("warnings") else " (" + "; ".join(val["warnings"]) + ")")) if val else "", "",
                _tbl([[k, x["value"], x["note"]] for k, x in c["items"].items()], ["check", "value", "how measured"]), "",
                f"Import `{p.name}` on the Run Scorecards page (Import domeware values). Results stay with the reviewers.", ""]
+        sp = c.get("siap") or {}
+        if sp and "error" not in sp:
+            md += ["Independent check, Stone Soup SIAP metrics (Dstl; time-averaged over the run):", "",
+                   _tbl([[sp.get("completeness"), sp.get("ambiguity"), sp.get("spuriousness"), sp.get("position_accuracy_m"),
+                          sp.get("velocity_accuracy_mps"), sp.get("track_number_changes"), sp.get("longest_segment")]],
+                        ["completeness (1)", "ambiguity (1)", "spuriousness (0)", "position acc. m (0)", "velocity acc. m/s (0)",
+                         "track number changes (0)", "longest segment (1)"]),
+                   "", f"Target in brackets. {sp.get('method')}. Position accuracy is a 3D mean, so it reads higher than the "
+                   "horizontal medians above.", ""]
 
     perf = m.get("performance")
     if perf and (v / "performance.png").exists():
         md += ["## Detection by range and height", "",
                f"The radar had its own track on our drones for **{perf['share_overall']:.0%}** of {perf['drone_seconds']} "
-               + (f"(95 % CI {perf['ci95_overall'][0]:.0%}-{perf['ci95_overall'][1]:.0%}, Clopper-Pearson; optimistic, "
-                  "seconds are not independent) " if perf.get("ci95_overall") else "") +
+               + (f"(95 % CI {perf['ci95_overall'][0]:.0%}-{perf['ci95_overall'][1]:.0%}, bootstrap over "
+                  f"{perf.get('flights')} flights) " if perf.get("ci95_overall") else
+                  f"(only {perf.get('flights')} flight(s): too few for an honest interval) ") +
                "airborne drone-seconds (" + ", ".join(f"{k} {x:.0%}" for k, x in perf["share_by_drone"].items()) + "). "
-               "Measured share for these flights, not a general probability of detection; each bar shows its seconds.", "",
+               "Measured share for these flights, not a general probability of detection; each bar shows its seconds.",
+               (f" Flights with at least one radar track: {perf['flights_with_track']}/{perf['flights']} "
+                f"(95 % CI {perf['ci95_flights_with_track'][0]:.0%}-{perf['ci95_flights_with_track'][1]:.0%}, Clopper-Pearson)."
+                if perf.get("flights") else ""), "",
                "![performance](performance.png)", ""]
     if (v / "session.kml").exists():
         md += ["Google Earth: open `views/session.kml` (desktop or phone) and use the time slider.", ""]

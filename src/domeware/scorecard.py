@@ -413,6 +413,12 @@ def run(s: Session, gate_m: float = 50.0, only: str | None = None) -> list[dict]
                 "items": dict(sorted(items.items())),
                 "whole_run": {k: v for k, v in whole.items() if k.startswith("BD")}}
         card["validity"] = validity(m_run, grid, extra)
+        try:  # independent check with Stone Soup's published track-to-truth metrics
+            from domeware.siap import siap
+
+            card["siap"] = siap({k: r["truth"] for k, r in m_run["per"].items()}, m_run["tracks"], gate_m)
+        except Exception as e:  # noqa: BLE001 - the cross-check must never stop the scorecard
+            card["siap"] = {"error": str(e)}
         if not phases:
             s.note(f"scorecard: {run_id}: no phase times, so only run-level checks are filled. Add them with "
                    f"dw runs {s.root.name} --card <scorecard export>.json, or P1-P4 rows in runs.csv")

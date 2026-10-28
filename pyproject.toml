@@ -21,6 +21,7 @@ dependencies = [
     "pymavlink>=2.4.50",
     "defusedxml>=0.7.1",
     "mapbox-earcut>=2.1.0",
+    "stonesoup>=1.9",
 ]
 
 [project.scripts]

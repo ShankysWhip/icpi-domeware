@@ -20,3 +20,14 @@ def test_wilson_known_values(k, n, lo, hi):
 
 def test_empty_is_the_whole_range():
     assert clopper_pearson(0, 0) == (0.0, 1.0)
+
+
+def test_cluster_bootstrap_is_wider_than_counting_seconds():
+    from domeware.stats import cluster_bootstrap_share
+
+    # four flights of 100 s: two fully tracked, two not at all. Counting 400 seconds as independent gives a tight
+    # interval around 50 %; by flight, the honest interval is wide.
+    lo, hi = cluster_bootstrap_share([100, 100, 0, 0], [100, 100, 100, 100], seed=1)
+    a, b = clopper_pearson(200, 400)
+    assert lo < a and hi > b and lo <= 0.25 and hi >= 0.75
+    assert cluster_bootstrap_share([5, 5], [10, 10]) is None  # two flights: no interval

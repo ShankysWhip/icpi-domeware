@@ -16,7 +16,7 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
 from domeware.session import Session  # noqa: E402
-from domeware.stats import clopper_pearson  # noqa: E402
+from domeware.stats import clopper_pearson, cluster_bootstrap_share  # noqa: E402
 
 
 def seconds_table(s: Session, gate_m: float = 50.0) -> pd.DataFrame:
@@ -42,6 +42,17 @@ def seconds_table(s: Session, gate_m: float = 50.0) -> pd.DataFrame:
         rows.append(pd.DataFrame({"t_utc": part["t_utc"].to_numpy(), "drone": name, "ground_range_m": np.hypot(e, n),
                                   "height_m": h, "detected": part["detected"].to_numpy()}))
     return pd.concat(rows, ignore_index=True)
+
+
+def flight_table(s: Session, sec: pd.DataFrame) -> pd.DataFrame:
+    """One row per flight (drone x run from runs.csv; drone x session without runs): seconds and seconds tracked."""
+    from domeware import runs as R
+
+    sec = sec.assign(run="session")
+    df = R.load(s) if (s.root / "runs.csv").exists() else pd.DataFrame()
+    for r in df[df["part"] == "RUN"].itertuples() if len(df) else []:
+        sec.loc[(sec["t_utc"] >= r.start_utc) & (sec["t_utc"] <= r.end_utc), "run"] = r.run_id
+    return sec.groupby(["drone", "run"])["detected"].agg(seconds="size", detected="sum").reset_index()
 
 
 def build(s: Session, gate_m: float = 50.0) -> dict | None:
@@ -75,15 +86,22 @@ def build(s: Session, gate_m: float = 50.0) -> dict | None:
         ax.set_ylabel("airborne seconds with a radar track (%)")
         ax.grid(axis="y", alpha=0.3)
     fig.suptitle(f"Radar detection share by range and height ({sec['drone'].nunique()} drone(s), {len(sec)} drone-seconds; "
-                 "pale bars rest on < 10 s; whiskers: 95 % Clopper-Pearson, optimistic because seconds are not independent)",
+                 "pale bars rest on < 10 s; whiskers: 95 % Clopper-Pearson per bin, optimistic: seconds are not independent)",
                  fontsize=9)
     fig.savefig(s.views / "performance.png", dpi=110, bbox_inches="tight")
     plt.close(fig)
     by_drone = sec.groupby("drone")["detected"].agg(["size", "mean"]).rename(columns={"size": "seconds", "mean": "share"})
-    lo, hi = clopper_pearson(int(sec["detected"].sum()), len(sec))
+    # Honest intervals: a flight (drone x run) is the independent unit, not a second
+    flights = flight_table(s, sec)
+    per_flight = clopper_pearson(int((flights["detected"] > 0).sum()), len(flights))
+    boot = cluster_bootstrap_share(flights["detected"].tolist(), flights["seconds"].tolist())
     s.manifest["performance"] = {"png": "views/performance.png", "drone_seconds": int(len(sec)),
                                  "share_overall": round(float(sec["detected"].mean()), 3),
-                                 "ci95_overall": [round(lo, 3), round(hi, 3)],
+                                 "flights": int(len(flights)), "flights_with_track": int((flights["detected"] > 0).sum()),
+                                 "ci95_flights_with_track": [round(per_flight[0], 3), round(per_flight[1], 3)],
+                                 "ci95_overall": None if boot is None else [round(boot[0], 3), round(boot[1], 3)],
+                                 "ci_method": "share: cluster bootstrap over flights (drone x run); flights with a track: "
+                                              "Clopper-Pearson",
                                  "share_by_drone": {k: round(float(v), 3) for k, v in by_drone["share"].items()}}
     s.note(f"performance: {len(sec)} drone-seconds, tracked {sec['detected'].mean():.0%} -> views/performance.png")
     s.save()
