@@ -85,3 +85,49 @@ def build(s: Session, gate_m: float = 50.0) -> dict | None:
     s.note(f"performance: {len(sec)} drone-seconds, tracked {sec['detected'].mean():.0%} -> views/performance.png")
     s.save()
     return out
+
+
+def timeline(s: Session, gate_m: float = 50.0) -> pd.DataFrame | None:
+    """views/timeline_1s.csv: one row per second, one column group per drone, plus weather and drone events.
+    Opens in Excel or PlotJuggler; the quickest way to line things up by eye."""
+    from domeware.compare import _ns
+    from domeware.scorecard import _load, association_grid, measure
+
+    truths, tracks = _load(s)
+    if not truths:
+        return None
+    a = min(d["t_utc"].iloc[0] for d in truths.values()).floor("1s")
+    b = max(d["t_utc"].iloc[-1] for d in truths.values()).ceil("1s")
+    out = pd.DataFrame({"t_utc": pd.date_range(a, b, freq="1s").as_unit("ns")})
+    grid = association_grid(measure(truths, tracks, a, b, gate_m), a, b) if len(tracks) else pd.DataFrame()
+    x = _ns(out["t_utc"])
+    for name, d in truths.items():
+        tt = _ns(d["t_utc"])
+        inside = (x >= tt[0]) & (x <= tt[-1])
+        for col, src in (("height_m", "h_rel_takeoff_m"), ("e_m", "e_m"), ("n_m", "n_m")):
+            out[f"{name}.{col}"] = np.where(inside, np.interp(x, tt, d[src].to_numpy()), np.nan).round(1)
+        out[f"{name}.ground_range_m"] = np.hypot(out[f"{name}.e_m"], out[f"{name}.n_m"]).round(1)
+        if len(grid):
+            mine = grid[grid["drone"] == name].assign(t_utc=lambda f: f["t_utc"].dt.as_unit("ns")).set_index("t_utc")
+            for col in ("track_id", "err_h_m", "class_name", "alarm"):
+                if col in mine:
+                    v = out["t_utc"].map(mine[col])
+                    out[f"{name}.radar_{col}"] = (v.round(1) if col == "err_h_m" else v.astype("Int64") if col == "track_id" else v)
+    wx = s.streams / "weather" / "fmi_nearest.parquet"
+    if wx.exists():
+        w = pd.read_parquet(wx)
+        w["t_utc"] = pd.to_datetime(w["t_utc"], utc=True).dt.as_unit("ns")
+        keep = [c for c in ("wind_ms", "gust_ms", "temp_c", "visibility_m") if c in w]
+        if keep:
+            out = pd.merge_asof(out, w[["t_utc", *keep]].sort_values("t_utc"), on="t_utc", direction="backward",
+                                tolerance=pd.Timedelta("20min")).rename(columns={c: f"weather.{c}" for c in keep})
+    de = s.streams / "events" / "drone_events.parquet"
+    if de.exists():
+        ev = pd.read_parquet(de)
+        ev["sec"] = pd.to_datetime(ev["t_utc"], utc=True).dt.floor("1s").dt.as_unit("ns")
+        ev["txt"] = ev["drone"] + ": " + ev["kind"] + " " + ev["detail"].astype(str)
+        out["events"] = out["t_utc"].map(ev.groupby("sec")["txt"].agg("; ".join))
+    s.views.mkdir(parents=True, exist_ok=True)
+    out.assign(t_utc=out["t_utc"].dt.strftime("%Y-%m-%dT%H:%M:%SZ")).to_csv(s.views / "timeline_1s.csv", index=False)
+    s.note(f"timeline: views/timeline_1s.csv ({len(out)} seconds, {len(out.columns)} columns)")
+    return out

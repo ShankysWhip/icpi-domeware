@@ -119,7 +119,10 @@ All three run inside `dw run` when drone truth exists.
 - **`dw kml <session>`**: `views/session.kml` for Google Earth (desktop or phone), drones and their radar tracks in
   the replay colours, with the time slider.
 
-Both run inside `dw run`.
+- **`dw timeline <session>`**: `views/timeline_1s.csv`, one row per second: each drone's position and height, its
+  radar track, error, class and alarm, weather and drone events. Opens in Excel or PlotJuggler.
+
+All three run inside `dw run`.
 
 ## Team
 

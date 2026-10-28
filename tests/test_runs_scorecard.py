@@ -183,3 +183,13 @@ def test_detection_share_by_range_and_kml(tmp_path):
     k = kml.build(s)
     xml.dom.minidom.parseString(k)  # valid XML
     assert k.count("<gx:Track>") >= 4 and "drone A_SIMULATED" in k
+
+
+def test_timeline_one_row_per_second_with_each_drone(tmp_path):
+    from domeware import performance
+
+    s = _session(tmp_path)
+    t = performance.timeline(s)
+    assert len(t) == 121 and t["t_utc"].diff().dropna().dt.total_seconds().eq(1).all()
+    assert t["A_SIMULATED.radar_track_id"].dropna().eq(1).all() and t["B_SIMULATED.radar_track_id"].dropna().eq(2).all()
+    assert (s.views / "timeline_1s.csv").exists()
