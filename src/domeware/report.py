@@ -126,8 +126,9 @@ def build(s: Session) -> str:
     md += ["## Replay", "", "`uv run rerun --bind 127.0.0.1 --port auto <session>\\views\\replay.rrd`", ""]
     md += ["## Known limits", "",
            "- The radar's altitude datum is unconfirmed; vertical errors are indicative until the radar owner confirms it.",
-           "- NLS data (ETRS89) and WGS84 positions are combined without the ~0.9 m plate-motion shift; fine for replay, "
-           "not for sub-metre claims.",
+           f"- NLS layers (ETRS89) are moved onto the GPS frame by {(stats.get('nls_layers_shifted_m') or [0, 0])[0]} m east and "
+           f"{(stats.get('nls_layers_shifted_m') or [0, 0])[1]} m north: "
+           "plate motion since 1989, ITRF2020 to ETRF2000 at today's epoch, good to a few centimetres.",
            "- Building and power-line heights are estimates; line of sight is MODELLED, not detection probability.",
            "", "## Sources", "", f"- {(env or {}).get('attribution', '')}", f"- {feat.get('attribution', '')}",
            f"- {(m['streams'].get('weather') or {}).get('attribution', '')}", ""]

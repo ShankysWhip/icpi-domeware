@@ -33,6 +33,10 @@ CLASS_RANK = ["UNCLASSIFIED", "OTHER", "VEHICLE", "SUSPECTED_DRONE", "DRONE"]
 CLASS_RGB = {"DRONE": [30, 120, 255], "SUSPECTED_DRONE": [255, 140, 0], "VEHICLE": [0, 170, 120],
              "OTHER": [120, 120, 120], "UNCLASSIFIED": [180, 180, 180]}
 ALARM_RGB = [230, 40, 40]
+# one colour per drone, kept apart from the radar class colours above; a radar track that was a drone wears its colour
+DRONE_RGB = [[0, 230, 90], [255, 60, 200], [0, 210, 230], [240, 220, 40], [160, 90, 255], [150, 255, 60],
+             [255, 150, 190], [0, 160, 140], [255, 255, 255], [200, 120, 60]]
+DRONE_COLOUR_NAMES = ["green", "magenta", "cyan", "yellow", "purple", "lime", "pink", "teal", "white", "brown"]
 
 
 def enu(lat, lon, h, lat0, lon0, h0):
@@ -263,6 +267,12 @@ def build(s: Session) -> dict:
                                                                labels=[f"PLANNED {f.stem}"]), static=True)
             stats.setdefault("planned_paths", []).append(f.stem)
     log_los(rec, s, site, stats)
+    from domeware.datum import nls_layer_shift
+
+    shift = nls_layer_shift(site["lat_deg"], site["lon_deg"])  # NLS maps are ETRS89; radar and drones are GPS
+    for layer in ("world/terrain", "world/buildings", "world/power_lines", "world/trees", "world/los_MODELLED"):
+        rec.log(layer, rr.Transform3D(translation=shift), static=True)
+    stats["nls_layers_shifted_m"] = [round(v, 2) for v in shift]
 
     ground_z = (site["ground_level_m"] - site["alt_m"]) if site.get("ground_level_m") else 0.0
     rec.log("world/radar", rr.Points3D([[0, 0, 0]], colors=[[255, 120, 0]], radii=4.0,
@@ -276,13 +286,26 @@ def build(s: Session) -> dict:
 
     events: list[tuple[pd.Timestamp, str]] = []
     focus_ids = []
-    focus_track_df = None
+    truths = {}
+    for f in truth_files(s):
+        d = pd.read_parquet(f).dropna(subset=["t_utc", "e_m", "n_m", "u_m"]).sort_values("t_utc")
+        if len(d):
+            d["t_utc"] = pd.to_datetime(d["t_utc"], utc=True)
+            truths[f.stem] = d
+    drone_rgb = {k: DRONE_RGB[i % len(DRONE_RGB)] for i, k in enumerate(truths)}
+    owner: dict[int, str] = {}  # radar track id -> drone it was (nearest drone, gate 50 m; same rule as dw compare)
+    all_tracks = []
     for name, info_s in s.manifest["streams"].items():
         tp = s.streams / name / "tracks.parquet"
         if not tp.exists():
             continue
         tr = pd.read_parquet(tp)
         tr["t_utc"] = pd.to_datetime(tr["t_utc"], utc=True)
+        if truths:
+            from domeware.compare import assign_tracks
+
+            owner.update(assign_tracks(truths, tr, 50.0))
+        all_tracks.append(tr)
         focus = info_s.get("focus_track")
         if focus is not None:
             focus_ids.append(focus)
@@ -291,15 +314,17 @@ def build(s: Session) -> dict:
             classes = set(g["class_name"].dropna())
             best = max(classes, key=lambda c: CLASS_RANK.index(c) if c in CLASS_RANK else -1) if classes else "UNCLASSIFIED"
             alarm = bool(g["alarm"].fillna(False).astype(bool).any())
-            color = ALARM_RGB if alarm else CLASS_RGB.get(best, [200, 200, 200])
+            mine = owner.get(int(tid))
+            color = drone_rgb[mine] if mine else ALARM_RGB if alarm else CLASS_RGB.get(best, [200, 200, 200])
             path = f"world/tracks/{'focus_' if tid == focus else ''}{tid}"
             t = rr.TimeColumn("utc", timestamp=_ts(g["t_utc"]))
             pos = g[["e_m", "n_m", "u_m"]].to_numpy(np.float32)
-            labels = [f"{tid} {c}{' ALARM' if a else ''}" for c, a in zip(g["class_name"], g["alarm"].fillna(False))]
+            labels = [f"{tid} {c}{' ALARM' if a else ''}{' = ' + mine if mine else ''}"
+                      for c, a in zip(g["class_name"], g["alarm"].fillna(False))]
             rec.send_columns(path, indexes=[t], columns=[*rr.Points3D.columns(positions=pos).partition([1] * len(pos)),
                                                          *rr.Points3D.columns(labels=labels)])
-            rec.log(path, rr.Points3D.from_fields(colors=[color], radii=3.0 if tid == focus else 1.8,
-                                                  show_labels=alarm or tid == focus), static=True)
+            rec.log(path, rr.Points3D.from_fields(colors=[color], radii=3.0 if tid == focus or mine else 1.8,
+                                                  show_labels=alarm or tid == focus or bool(mine)), static=True)
             rec.send_columns(f"plots/range_m/{tid}", indexes=[t], columns=rr.Scalars.columns(scalars=g["range_m"].to_numpy()))
             rec.send_columns(f"plots/height_above_radar_ground_m/{tid}", indexes=[t],
                              columns=rr.Scalars.columns(scalars=g["h_above_site_ground_m"].to_numpy()))
@@ -311,7 +336,6 @@ def build(s: Session) -> dict:
                                          columns=rr.Scalars.columns(scalars=pd.to_numeric(g[col], errors="coerce").to_numpy(np.float64)))
                 rec.send_columns("focus/alarm (0/1)", indexes=[t],
                                  columns=rr.Scalars.columns(scalars=g["alarm"].fillna(False).astype(float).to_numpy()))
-                focus_track_df = g
         stats[f"{name}_tracks"] = int(tr["track_id"].nunique())
         pp = s.streams / name / "plots.parquet"
         if pp.exists():
@@ -323,29 +347,46 @@ def build(s: Session) -> dict:
                                  .partition([1] * len(pl)))
                 rec.log("world/potential_drone_plots", rr.Points3D.from_fields(colors=[[170, 80, 255]], radii=1.5), static=True)
 
-    for f in truth_files(s):
-        d = pd.read_parquet(f).dropna(subset=["t_utc", "e_m", "n_m", "u_m"]).sort_values("t_utc")
-        if d.empty:
-            continue
+    tracks_all = pd.concat(all_tracks, ignore_index=True) if all_tracks else pd.DataFrame()
+    legend = ["# Drones", "", "Each drone has its own colour. A radar track that was that drone (nearest drone, "
+              "within 50 m) wears the same colour and its label ends with `= <drone>`. Other tracks keep the radar's "
+              "class colours (blue DRONE, orange SUSPECTED, red ALARM, grey other).", ""]
+    for name, d in truths.items():
+        rgb = drone_rgb[name]
         pos = d[["e_m", "n_m", "u_m"]].to_numpy(np.float32)
         t = rr.TimeColumn("utc", timestamp=_ts(d["t_utc"]))
-        rec.send_columns(f"world/truth/{f.stem}", indexes=[t], columns=rr.Points3D.columns(positions=pos).partition([1] * len(pos)))
-        rec.log(f"world/truth/{f.stem}", rr.Points3D.from_fields(colors=[[0, 230, 90]], radii=2.5), static=True)
-        rec.log(f"world/truth/{f.stem}_path", rr.LineStrips3D([pos], colors=[[0, 200, 80]], radii=0.4), static=True)
-        stats[f"truth_{f.stem}_frames"] = len(d)
-        if focus_track_df is not None:  # error vector: radar track state -> true drone position at the same instant
+        rec.send_columns(f"world/truth/{name}", indexes=[t], columns=rr.Points3D.columns(positions=pos).partition([1] * len(pos)))
+        rec.log(f"world/truth/{name}", rr.Points3D.from_fields(colors=[rgb], radii=2.5, labels=[name], show_labels=True), static=True)
+        rec.log(f"world/truth/{name}_path", rr.LineStrips3D([pos], colors=[rgb], radii=0.4), static=True)
+        for lane, v in ((f"plots/range_m/drone {name}", np.hypot(d["e_m"], d["n_m"]).to_numpy()),
+                        (f"plots/drone_height_m/{name}", d["h_rel_takeoff_m"].to_numpy(np.float64) if "h_rel_takeoff_m" in d else None)):
+            if v is not None:
+                rec.send_columns(lane, indexes=[t], columns=rr.Scalars.columns(scalars=v))
+                rec.log(lane, rr.SeriesLines(colors=[rgb], names=[name]), static=True)
+        stats[f"truth_{name}_frames"] = len(d)
+        mine = sorted(k for k, v in owner.items() if v == name)
+        legend.append(f"- **{name}**: {DRONE_COLOUR_NAMES[list(truths).index(name) % len(DRONE_COLOUR_NAMES)]}, "
+                      f"radar tracks {', '.join(map(str, mine)) or 'none'}")
+        if mine and len(tracks_all):  # error vector: radar track state -> true drone position at the same instant
             from domeware.compare import _interp_truth
 
-            g = focus_track_df
+            g = tracks_all[tracks_all["track_id"].isin(mine)].sort_values("t_utc")
             tp = _interp_truth(d, g["t_utc"])
             tk = g[["e_m", "n_m", "u_m"]].to_numpy()
-            err = np.linalg.norm(tk - tp, axis=1)
-            ok = np.isfinite(err) & (err < 200)  # beyond 200 m it is not this drone; no misleading lines
-            for ts, a, b, e_h in zip(g["t_utc"][ok], tk[ok], tp[ok], np.hypot(*(tk - tp)[ok][:, :2].T)):
-                rec.set_time("utc", timestamp=ts.to_datetime64())
-                rec.log(f"world/error/{f.stem}", rr.LineStrips3D([[a, b]], colors=[[255, 60, 200]], radii=0.6))
-                rec.log(f"focus/horizontal error vs {f.stem} (m)", rr.Scalars(float(e_h)))
-            stats[f"error_vectors_{f.stem}"] = int(ok.sum())
+            ok = np.isfinite(tp).all(axis=1)
+            if ok.any():
+                te = rr.TimeColumn("utc", timestamp=_ts(g["t_utc"][ok]))
+                strips = np.stack([tk[ok], tp[ok]], axis=1).astype(np.float32)
+                rec.send_columns(f"world/error/{name}", indexes=[te],
+                                 columns=rr.LineStrips3D.columns(strips=list(strips)).partition([1] * len(strips)))
+                rec.log(f"world/error/{name}", rr.LineStrips3D.from_fields(colors=[rgb], radii=0.6), static=True)
+                eh = np.hypot(*(tk[ok] - tp[ok])[:, :2].T)
+                rec.send_columns(f"plots/horizontal_error_m/{name}", indexes=[te], columns=rr.Scalars.columns(scalars=eh))
+                rec.log(f"plots/horizontal_error_m/{name}", rr.SeriesLines(colors=[rgb], names=[name]), static=True)
+            stats[f"error_vectors_{name}"] = int(ok.sum())
+    if truths:
+        rec.log("legend", rr.TextDocument("\n".join(legend), media_type=rr.MediaType.MARKDOWN), static=True)
+    stats["track_owner"] = {str(k): v for k, v in owner.items()}
 
     wx = s.streams / "weather" / "fmi_nearest.parquet"
     weather_cols = []
@@ -368,6 +409,10 @@ def build(s: Session) -> dict:
 
         for r in R.load(s).itertuples():
             events += [(r.start_utc, f"{r.run_id} {r.part} start"), (r.end_utc, f"{r.run_id} {r.part} end")]
+    from domeware.video import log_videos
+
+    video_paths = log_videos(rec, s)
+    stats["videos"] = video_paths
     events.sort(key=lambda e: e[0])
     for ts, msg in events:
         rec.set_time("utc", timestamp=ts.to_datetime64())
@@ -382,7 +427,8 @@ def build(s: Session) -> dict:
              for fid in focus_ids[:1]]
     bp = rrb.Blueprint(
         rrb.Horizontal(
-            rrb.Vertical(rrb.Spatial3DView(name="Site", origin="/world", time_ranges=[trail]), *chase),
+            rrb.Vertical(rrb.Spatial3DView(name="Site", origin="/world", time_ranges=[trail]), *chase,
+                         *[rrb.Spatial2DView(name=p.split("/", 1)[1], origin=f"/{p}") for p in video_paths]),
             rrb.Vertical(rrb.TimeSeriesView(name="Range from radar (m)", origin="/plots/range_m"),
                          rrb.TimeSeriesView(name="Height above radar ground (m)", origin="/plots/height_above_radar_ground_m"),
                          *([rrb.TimeSeriesView(name="Wind (m/s, FMI nearest)", origin="/weather",
@@ -390,8 +436,12 @@ def build(s: Session) -> dict:
                             rrb.TimeSeriesView(name="Temp (C) / visibility (m), FMI", origin="/weather",
                                                contents=["/weather/temp_c", "/weather/visibility_m"])]
                            if weather_cols else []),
-                         rrb.TimeSeriesView(name="Focus track: radar's judgement & error", origin="/focus"),
-                         rrb.TextLogView(name="Events", origin="/events")),
+                         *([rrb.TimeSeriesView(name="Drone height above take-off (m)", origin="/plots/drone_height_m"),
+                            rrb.TimeSeriesView(name="Radar horizontal error per drone (m)", origin="/plots/horizontal_error_m")]
+                           if truths else []),
+                         rrb.TimeSeriesView(name="Focus track: radar's judgement", origin="/focus"),
+                         rrb.TextLogView(name="Events", origin="/events"),
+                         *([rrb.TextDocumentView(name="Legend", origin="/legend")] if truths else [])),
             column_shares=[3, 1]),
         rrb.TimePanel(timeline="utc", state="expanded"), collapse_panels=True)
     rec.send_blueprint(bp)

@@ -27,7 +27,11 @@ dependencies = [
 dw = "domeware.cli:main"
 
 [dependency-groups]
-dev = ["pytest>=9.1", "ruff>=0.17"]
+dev = [
+    "imageio-ffmpeg>=0.7.0",
+    "pytest>=9.1",
+    "ruff>=0.17",
+]
 
 [build-system]
 requires = ["uv_build>=0.13.4,<0.14.0"]

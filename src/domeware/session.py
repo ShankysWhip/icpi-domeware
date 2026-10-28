@@ -62,6 +62,8 @@ def detect_role(path: Path) -> str:
         return "mavlink_tlog"
     if name.endswith(".pos"):
         return "rtklib_pos"
+    if name.endswith((".mp4", ".mov")):
+        return "video"
     return "unknown"
 
 

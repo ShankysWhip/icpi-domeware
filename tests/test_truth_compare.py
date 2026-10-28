@@ -62,3 +62,10 @@ def test_rtklib_pos_gpst_and_n2000(tmp_path):
     df, meta = T.read_rtklib_pos(p)
     assert str(df["t_utc"].iloc[0]) == "2026-10-21 10:30:00+00:00"  # GPST - 18 s
     assert 15 < 115.0 - df["h_n2000_m"].iloc[0] < 20  # geoid undulation in northern Finland is ~17-18 m
+
+
+def test_nls_layers_move_about_0_9_m_north_east_in_oulu():
+    from domeware.datum import nls_layer_shift
+
+    e, n, u = nls_layer_shift(65.1767, 26.044, 2026.8)
+    assert 0.6 < e < 0.75 and 0.5 < n < 0.65 and u == 0.0  # ~2.5 cm/yr since 1989, towards north-east

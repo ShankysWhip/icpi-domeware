@@ -30,13 +30,30 @@ def convert_robin(s: Session) -> None:
     cfg_files = s.raw_files("robin_cfg")
     cfg_dir = next((p.parent for p in cfg_files if p.name.lower() == "irisradar.config"), None)
     raw = s.raw_files("robin_raw")
+    sha = {s.root / r["path"]: r["sha256"] for r in s.manifest["raw"]}
     for xml in xmls:
         out = s.streams / ("robin" if len(xmls) == 1 else f"robin_{xml.stem}")
+        prev = s.manifest["streams"].get(out.name) or {}
+        if (prev.get("source_sha256") == sha.get(xml) and prev.get("adapter") == f"{R.ADAPTER} {R.ADAPTER_VERSION}"
+                and (out / "tracks.parquet").exists()):
+            print(f"robin: {xml.name}: unchanged, kept")  # a full day of radar takes minutes; never redo it for nothing
+            continue
         rep = R.convert(xml, out, cfg_dir, raw, quicklook=False, hash_raw=False)
-        focus = _pick_focus_track(out / "tracks.parquet")
-        rep = R.convert(xml, out, cfg_dir, raw, quicklook=True, focus_track=focus, hash_raw=False)
+        focus = _pick_focus_track(out / "tracks.parquet") if (out / "tracks.parquet").exists() else None
+        if (out / "tracks.parquet").exists():  # quicklooks from the written tables: no second parse of the XML
+            try:
+                site_j = json.loads((out / "site.json").read_text(encoding="utf-8")).get("radar") or {}
+                p = site_j.get("position") or {}
+                site_pos = {"lat_deg": p["lat_deg"], "lon_deg": p["lon_deg"], "alt_m": p.get("alt_m"),
+                            "ground_level_m": site_j.get("ground_level_m")} if p.get("lat_deg") is not None else None
+                tables = {n: pd.read_parquet(out / f"{n}.parquet") for n in ("tracks", "track_summary", "plots")
+                          if (out / f"{n}.parquet").exists()}
+                R.make_quicklooks(tables, site_pos, out, focus)
+            except Exception as e:  # pictures are optional; the data is already written
+                s.note(f"robin: quicklooks not drawn ({e})")
         t = rep["tracks"]
         s.manifest["streams"][out.name] = {"adapter": f"{R.ADAPTER} {R.ADAPTER_VERSION}", "source": xml.name,
+                                           "source_sha256": sha.get(xml),
                                            "focus_track": focus, "tracks_kept": t.get("rows_kept"),
                                            "duplicates_dropped": t.get("duplicates_dropped"),
                                            "unique_tracks": t.get("unique_tracks"),

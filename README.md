@@ -90,6 +90,18 @@ With several drones, each track belongs to one drone only: the nearest one.
 
 All three run inside `dw run` when drone truth exists.
 
+## Swarm, video and map accuracy in the replay
+
+- **Swarm:** every drone has its own colour and name. A radar track that was a drone wears that drone's colour and its
+  label ends with `= <drone>`. Lanes show each drone's height and the radar's horizontal error per drone; the Legend
+  panel lists drones, colours and their radar tracks.
+- **Video:** `.MP4` / `.MOV` files are placed on the UTC clock from the DJI `.SRT` with the same name, or from
+  `video_offsets.csv` (`file,start_utc`, e.g. from filming a GPS clock). A clip with no known time is left out, never
+  guessed. H.264/H.265 playback in the viewer needs ffmpeg on the PATH (`dw doctor` shows it).
+- **Map accuracy:** NLS maps are ETRS89 and GPS is ITRF; in Finland they now differ by ~0.9 m. The replay moves the
+  NLS layers onto the GPS frame (ITRF2020 to ETRF2000 at today's epoch).
+- **Speed:** a radar file that has not changed is not converted again; an 80 MB radar file converts in under 10 s.
+
 ## Team
 
 - **`dw list`** shows every session in one table and writes `domeware-data/sessions/index.html`.

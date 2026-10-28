@@ -92,6 +92,9 @@ def doctor() -> int:
           "update GPS_UTC_LEAP_S in adapters/truth.py from IERS Bulletin C")
     exe = Path(sys.executable).with_name("rerun.exe" if sys.platform == "win32" else "rerun")
     check(exe.exists(), "Rerun viewer", "run: uv sync (rerun-sdk ships the viewer)")
+    import shutil
+
+    print(f"  {'OK ' if shutil.which('ffmpeg') else '-- '}  ffmpeg on PATH (optional: only for H.264/H.265 video in the replay viewer)")
     data = Path.home() / "Work" / "domeware-data"
     check(data.exists(), f"data folder {data}", f"create it: mkdir {data}")
     print("All good." if not fixes else f"{fixes} thing(s) to fix.")
