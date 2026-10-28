@@ -107,12 +107,19 @@ def _clock(value: str, day: str) -> pd.Timestamp | None:
 
 
 def import_card(s: Session, card: Path) -> pd.DataFrame:
-    """Phase times from a scorecard export (ICPI Run Scorecards v2, Export JSON) into runs.csv."""
+    """A scorecard export (ICPI Run Scorecards v2, Export JSON) into the session: the card itself is kept as
+    cards/<run>.json (the team's results, values and notes, shown in the report next to the measured values), and its
+    run and phase times go into runs.csv."""
     c = json.loads(Path(card).read_text(encoding="utf-8"))
     run = c.get("run") or {}
     run_id = (run.get("run_id") or c.get("run_id") or "").strip()
     if not run_id:
         raise SystemExit(f"{card}: no run id in the card")
+    keep_dir = s.root / "cards"
+    keep_dir.mkdir(parents=True, exist_ok=True)
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "-", run_id)[:120]
+    (keep_dir / f"{safe}.json").write_text(json.dumps(c, indent=1, ensure_ascii=False), encoding="utf-8")  # latest export wins
+    s.note(f"cards: {run_id}: scorecard kept as cards/{safe}.json")
     df = ensure(s)
     day = (run.get("date") or "").strip()
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
@@ -130,7 +137,8 @@ def import_card(s: Session, card: Path) -> pd.DataFrame:
         if a is not None and b is not None and b > a:
             new.append({"run_id": run_id, "part": pid, "start_utc": a, "end_utc": b, "notes": "from scorecard card"})
     if not new:
-        raise SystemExit(f"{card}: no run or phase start/end times to import")
+        s.note(f"runs: {run_id}: the card has no run or phase times yet; runs.csv unchanged")
+        return df
     new = pd.DataFrame(new, columns=COLUMNS)
     if not (new["part"] == "RUN").any():  # a run row spanning its phases, so every phase sits inside a run
         new.loc[len(new)] = [run_id, "RUN", new["start_utc"].min(), new["end_utc"].max(), "span of the card's phases"]

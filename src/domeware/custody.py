@@ -15,7 +15,7 @@ from pathlib import Path
 
 from domeware.session import Session, now_utc, sha256_file
 
-KEEP = ("raw", "notes", "runs.csv", "video_offsets.csv", "manifest.json")
+KEEP = ("raw", "notes", "cards", "runs.csv", "video_offsets.csv", "image_clocks.csv", "manifest.json")
 
 
 def _files(root: Path) -> list[Path]:

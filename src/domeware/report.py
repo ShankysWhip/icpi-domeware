@@ -83,6 +83,29 @@ def build(s: Session) -> str:
                                            ["UTC", "drone", "event", "detail"]), ""]
         if len(d) > 60:
             md += [f"First 60 of {len(d)} events; all are in `streams/events/drone_events.parquet` and the replay's Events panel.", ""]
+    for cp in sorted((s.root / "cards").glob("*.json")):
+        card = json.loads(cp.read_text(encoding="utf-8"))
+        rid = (card.get("run") or {}).get("run_id") or card.get("run_id") or cp.stem
+        items = card.get("items") or {}
+        res = {k: (x or {}).get("result") for k, x in items.items()}
+        bp = sum(1 for k, r in res.items() if r == "Pass" and k.startswith("B"))
+        bf = sum(1 for k, r in res.items() if r == "Fail" and k.startswith("B"))
+        rp, rf = (sum(1 for k, r in res.items() if r == "Pass" and not k.startswith("B")),
+                  sum(1 for k, r in res.items() if r == "Fail" and not k.startswith("B")))
+        md += [f"## Team scorecard: {rid}", "",
+               f"Red (our drones) {rp} pass / {rf} fail; Blue (radar) {bp} pass / {bf} fail; "
+               f"Red team wins from Blue fails: **{bf}**. Filled by hand during the run (`cards/{cp.name}`).", ""]
+        fails = [[k, (items[k] or {}).get("value", ""), (items[k] or {}).get("note", "")] for k, r in sorted(res.items()) if r == "Fail"]
+        if fails:
+            md += ["Fails and why:", "", _tbl(fails, ["check", "value", "why"]), ""]
+        meas_p = v / f"scorecard_{rid}.json"
+        if meas_p.exists():
+            meas = json.loads(meas_p.read_text(encoding="utf-8")).get("items") or {}
+            both = [[k, res.get(k) or "", (items.get(k) or {}).get("value", ""), meas[k]["value"]]
+                    for k in sorted(meas) if (items.get(k) or {}).get("value") or res.get(k)]
+            if both:
+                md += ["Team entry next to what domeware measured (a big difference is worth a second look):", "",
+                       _tbl(both, ["check", "team result", "team value", "measured"]), ""]
     for p in sorted(v.glob("scorecard_*.json")):
         c = json.loads(p.read_text(encoding="utf-8"))
         val = c.get("validity") or {}

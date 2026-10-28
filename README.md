@@ -81,7 +81,8 @@ With several drones, each track belongs to one drone only: the nearest one.
 
 - **`dw runs <session>`** writes `runs.csv` (run id, part, start and end UTC) from the drones' take-offs and landings.
   Edit it freely; it is never overwritten. Phase times (P1-P4) come from a hand edit or from a scorecard export:
-  `dw runs <session> --card <export>.json` (Run Scorecards v2 page, *Export JSON*).
+  `dw runs <session> --card <export>.json` (Run Scorecards v2 page, *Export JSON*). The card itself is kept in
+  `cards/`, and the report shows the team's results, fails and values next to what domeware measured.
 - **`dw events <session>`** puts drone events on the UTC clock: take-off, landing, log gaps, weak GPS, and from
   ArduPilot `.bin` / MAVLink `.tlog` the flight-mode changes, arm/disarm, failsafes and warnings. They show in the
   replay's Events panel and in the report.

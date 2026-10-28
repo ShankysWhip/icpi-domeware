@@ -244,3 +244,21 @@ def test_seal_sync_never_deletes_and_merges_notes(tmp_path):
     raw.chmod(0o666)
     raw.write_text("tampered")
     assert any(p.startswith("changed: raw/") for p in custody.check_seal(ssd / "S1"))
+
+
+def test_team_scorecard_kept_and_shown_next_to_measured(tmp_path):
+    from domeware import report
+
+    s = _session(tmp_path)
+    card = tmp_path / "SIM-1.json"
+    card.write_text(json.dumps({"format": "icpi-run-scorecard/2", "run": {"run_id": "SIM-1", "date": "2026-10-28"},
+                                "phases": {"P2": {"used": "Included", "start": "09:00:40", "end": "09:01:20"}},
+                                "items": {"BD1": {"result": "Fail", "value": "900", "note": "seen late", "target": "≥ 1500"},
+                                          "R1": {"result": "Pass", "value": "20"}}}))
+    runs.import_card(s, card)
+    assert (s.root / "cards" / "SIM-1.json").exists()
+    scorecard.run(s)
+    text = report.build(s)
+    assert "## Team scorecard: SIM-1" in text and "Red team wins from Blue fails: **1**" in text
+    assert "| BD1 | 900 | seen late |" in text  # the fail and its reason
+    assert "| BD1 | Fail | 900 |" in text  # team entry next to the measured value
