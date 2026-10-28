@@ -191,6 +191,10 @@ def items_for(part: str, m: dict, grid: pd.DataFrame, whole_run: bool, a, b, ext
             put("BL4", _fmt(cls, 1), f"first track to first DRONE class, slowest drone; {d3}" if cls is not None else "")
             ev, d4 = _worst(det, lambda r: abs((r.get("error_vertical_m") or {}).get("median") or 0), max)
             put("BL6", _fmt(ev, 1), f"median |vertical error|, worst drone (radar altitude datum unconfirmed); {d4}")
+            pt, d4b = _worst(det, lambda r: None if r.get("delay_airborne_to_first_plot_s") is None
+                             or r.get("delay_airborne_to_first_track_s") is None else
+                             max(0.0, r["delay_airborne_to_first_track_s"] - r["delay_airborne_to_first_plot_s"]), max)
+            put("BL7", _fmt(pt, 1), f"first radar plot near the drone to its first track, slowest drone; {d4b}")
         if p == "BD":
             eh, dh = _worst(det, lambda r: (r.get("error_horizontal_m") or {}).get("median"), max)
             ev, _ = _worst(det, lambda r: abs((r.get("error_vertical_m") or {}).get("median") or 0), max)
@@ -205,6 +209,14 @@ def items_for(part: str, m: dict, grid: pd.DataFrame, whole_run: bool, a, b, ext
                 return float(np.nanmedian(np.abs(on["speed_mps"].to_numpy() - v)))
             se, d5 = _worst(det, sp_err, max)
             put("BD3", _fmt(se, 1), f"median |radar speed - GPS ground speed|, worst drone; {d5}")
+            def class_drops(r):
+                on = r["on"].sort_values("t_utc")
+                if "class_name" not in on or on.empty:
+                    return None
+                is_d = on["class_name"].eq("DRONE").to_numpy()
+                return float(np.sum(is_d[:-1] & ~is_d[1:]))
+            cd, dcd = _worst(det, class_drops, max)
+            put("BD9", _fmt(cd, 0), f"times a drone track lost its DRONE class, worst drone; {dcd}")
             mg, sw = merges_swaps({k: r["truth"] for k, r in per.items()}, m["tracks"], extra.get("gate_m", 50.0))
             put("BD5", f"{mg} / {sw}", "seconds the radar showed two drones as one track / times a track moved from one "
                 "drone to another (every track update, nearest drone within the gate)")
@@ -240,6 +252,15 @@ def items_for(part: str, m: dict, grid: pd.DataFrame, whole_run: bool, a, b, ext
                 return float(dt[k:][~al[k:]].sum())
             dr, d9 = _worst(det, dropped, max)
             put("BA5", _fmt(dr, 1), f"seconds without alarm after the first alarm, worst drone; {d9}")
+            def warning(r):
+                on, tr_ = r["on"], r["truth"]
+                al = on[on["alarm"].fillna(False).astype(bool)]
+                if al.empty:
+                    return None
+                close = tr_.loc[np.sqrt(tr_["e_m"] ** 2 + tr_["n_m"] ** 2 + tr_["u_m"] ** 2).idxmin(), "t_utc"]
+                return (close - al["t_utc"].iloc[0]).total_seconds()
+            wt, dwt = _worst(det, warning, min)
+            put("BA6", _fmt(wt, 1), f"first alarm to the drone's closest approach to the radar, shortest warning; {dwt}")
         if p == "BH":
             put("BH1", _fmt(longest, 1) if det else None, "longest gap between drone-track updates while hovering")
             eh, dh = _worst(det, lambda r: (r.get("error_horizontal_m") or {}).get("median"), max)
@@ -256,7 +277,7 @@ def items_for(part: str, m: dict, grid: pd.DataFrame, whole_run: bool, a, b, ext
         sh = {k: r["radar_time_shift_s"] for k, r in per.items() if r.get("radar_time_shift_s") is not None}
         if sh:
             k = max(sh, key=lambda x: abs(sh[x]))
-            put("B2", f"{abs(sh[k]):.1f}", f"radar positions match GPS best when radar times are shifted {sh[k]:+.1f} s "
+            put("B7", f"{abs(sh[k]):.1f}", f"radar positions match GPS best when radar times are shifted {sh[k]:+.1f} s "
                 f"(negative = stamped late: latency or a fast radar clock); drone {k}: {per[k]['radar_time_shift_note']}")
         if extra.get("phases_found"):
             put("B5", extra["phases_found"], "phase windows in runs.csv that hold radar data")

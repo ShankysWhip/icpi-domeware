@@ -72,6 +72,8 @@ def test_scorecard_values_match_the_simulation(tmp_path):
     assert it["A5"]["value"] == "20.0"  # the drones flew 20 m apart
     assert it["BA2"]["value"] == "0.0"  # alarm came on before P3, so it is on at the phase's first update
     assert "BL2" not in it  # no P1 window: no P1 values
+    assert it["BD9"]["value"] == "0"  # UNKNOWN -> DRONE is a gain, not a drop
+    assert it["BA6"]["value"] == "30.0"  # alarm at 09:01:20, closest approach inside P3 at 09:01:50
     assert (s.views / "association_R1.parquet").exists()
     grid = pd.read_parquet(s.views / "association_R1.parquet")
     assert grid[grid["drone"] == "B_SIMULATED"]["detected"].sum() < grid[grid["drone"] == "A_SIMULATED"]["detected"].sum()

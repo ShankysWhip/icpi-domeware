@@ -103,7 +103,8 @@ table.ph { width: 100%; border-collapse: collapse; min-width: 760px; }
 .chk.red { grid-template-columns: minmax(220px, 2.2fr) auto minmax(120px, 1fr) minmax(140px, 1.3fr); }
 .chk.blue { grid-template-columns: minmax(200px, 2fr) minmax(90px, .7fr) minmax(120px, 1fr) auto minmax(140px, 1.3fr); }
 .hd { display: flex; gap: 8px; min-width: 0; }
-.hd .id { font: 500 13px var(--mono); color: var(--muted); min-width: 34px; }
+.hd .id { font: 500 13px var(--mono); color: var(--muted); min-width: 38px; }
+.xt { font: 600 10px var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; vertical-align: 1px; }
 .res { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
 .seg button { border: 0; border-radius: 0; padding: 8px 10px; min-width: 50px; background: var(--surface); }
@@ -179,6 +180,11 @@ const RUN_FIELDS = [
   ["clocks", "Clocks checked on UTC: offsets"], ["tarps", "Tarps placed at 500 m / 1 km / 2 km"],
   ["wx_start", "Weather at start (Vaisala)"], ["wx_end", "Weather at end (Vaisala)"],
   ["outcome", "Outcome: Ended / Aborted (reason)"], ["data", "Data saved: SD cards, files, folder"], ["notes", "Notes"],
+  // extra (CWA 18150 run card, Tables 37, 38 and 64): fill when training for a full test, skip otherwise
+  ["scenario", "Extra: scenario and variant (e.g. P2-Alfa)"], ["kml", "Extra: mission / KML file per drone"],
+  ["drone_details", "Extra: drone size (h × d), weight, colour, C2 band"],
+  ["wx_more", "Extra: wind at altitude, cloud base, light, rain / snow"],
+  ["blank", "Extra: blank run, no drones (UTC from–to)"], ["radar_changes", "Extra: radar settings changed during the run (what, when)"],
 ];
 const NOW_FIELDS = { "run.date": "date", "run.plan_start": "time", "run.start": "time", "run.end": "time" };
 const COPY_FIELDS = ["site", "pilots", "observer", "drones", "n_drones", "mode"];
@@ -197,24 +203,32 @@ const RED = [
   ["R11", "RUN", "Wind and temperature stayed within the drones' limits", "Max wind (m/s) / min temp (°C)"],
   ["R12", "RUN", "Every drone's log covers the whole flight with no missing parts", "Gaps (s)"],
   ["R13", "RUN", "Phase changes marked live (radio call + time written) so IRIS data can be cut", "Marks written"],
+  ["R14", "RUN", "Geofence, failsafes and return-home height loaded and checked on every drone", "Checked by"],
+  ["R15", "RUN", "Timing manoeuvre flown (sharp turn at a written time) so radar latency can be measured", "Time UTC"],
+  ["R16", "RUN", "Same GNSS logger on every drone, and the radar position surveyed with it", "Logger / survey"],
+  ["R17", "RUN", "No lost-link or failsafe event on any drone", "Events"],
   ["L1", "P1", "Planned route flown: straight-in and crossing passes", ""],
   ["L2", "P1", "Every planned altitude flown (large drones 2–10 m, small under 1 m)", "Altitudes flown (m)"],
   ["L3", "P1", "Formation and altitude held", ""],
   ["L4", "P1", "GPS good through the phase", "Min satellites"],
   ["L5", "P1", "Crossing passes flown at the planned distance from the radar", "Pass distance (m)"],
+  ["L6", "P1", "Line of sight from the radar noted for each pass (open / trees / terrain)", "LOS notes"],
   ["D1", "P2", "Started at the planned distance (4–5 km from the radar)", "Start distance (m)"],
   ["D2", "P2", "Planned route and altitude flown", ""],
   ["D3", "P2", "All drones started together and kept their spacing", ""],
   ["D4", "P2", "All drones finished the route", "Finished / started"],
   ["D5", "P2", "Planned speed held on the distance leg", "Speed (m/s)"],
+  ["D6", "P2", "Turn-around point reached at the planned range", "Range at turn (m)"],
   ["A1", "P3", "Approach flown toward the target as planned", ""],
   ["A2", "P3", "Stopped at the planned stand-off point (no contact)", "Closest distance (m)"],
   ["A3", "P3", "Speed and timing as planned", "Speed (m/s)"],
   ["A4", "P3", "All drones reached the end point", "Reached / started"],
   ["A5", "P3", "Spacing between drones kept on the approach", "Min spacing (m)"],
+  ["A6", "P3", "No-go zone around the radar and people kept", "Closest to no-go (m)"],
   ["H1", "P4", "Hover held over the target for the planned time", "Hover time (s)"],
   ["H2", "P4", "Position stayed steady over the tarp (GPS check)", "Drift (m)"],
   ["H3", "P4", "Hover altitude held", "Altitude change (m)"],
+  ["H4", "P4", "Hover point at a known, marked distance from the radar", "Distance (m)"],
 ];
 // [id, group, check, target hint, value label]
 const BLUE = [
@@ -223,12 +237,15 @@ const BLUE = [
   ["B3", "RUN", "IRIS settings for the run recorded (mode, sensitivity, set height / elevation)", "", "Settings"],
   ["B4", "RUN", "IRIS position and facing checked against our survey", "≤ m", "Position difference (m)"],
   ["B5", "RUN", "IRIS data can be cut by our phase marks (every phase window present)", "", "Phases found"],
+  ["B6", "RUN", "Blank run (no drones): false tracks and alarms counted", "≤", "False tracks / alarms per hour"],
+  ["B7", "RUN", "Reporting latency measured from the timing manoeuvre", "≤ s", "Latency (s)"],
   ["BL1", "P1", "Low drone detected at each flown altitude", "", "Lowest detected altitude (m)"],
   ["BL2", "P1", "Detected early enough", "≥ m", "First detection distance (m)"],
   ["BL3", "P1", "Track held", "≤ s gap", "Breaks / longest gap (s)"],
   ["BL4", "P1", "Classified as a drone", "≤ s", "Time to classify (s)"],
   ["BL5", "P1", "If tracking failed, why: too low / too far / drones too close / not flying straight at the radar / weather", "", "Reason"],
   ["BL6", "P1", "Height shown correctly at low altitude", "≤ m", "Height error (m)"],
+  ["BL7", "P1", "Quick from first plot to a confirmed track", "≤ s", "Plot → track (s)"],
   ["BD1", "P2", "Detected early enough", "≥ m", "First detection distance (m)"],
   ["BD2", "P2", "Position matched our GPS", "≤ m", "Distance / height error (m)"],
   ["BD3", "P2", "Speed and direction shown correctly", "", "Speed error (m/s)"],
@@ -237,15 +254,20 @@ const BLUE = [
   ["BD6", "P2", "Accuracy held at long range", "", "Error near / far (m)"],
   ["BD7", "P2", "Longest distance at which the drone was still tracked", "≥ m", "Max tracked distance (m)"],
   ["BD8", "P2", "No false tracks or alarms on other targets (birds, cars) during the phase", "≤", "False tracks / alarms"],
+  ["BD9", "P2", "Classification held once given (no drop from DRONE)", "≤", "Class drops"],
+  ["BD10", "P2", "Same track kept through turns", "≤", "Breaks at turns"],
   ["BA1", "P3", "Alarm before the stand-off point", "≥ m", "Distance at first alarm (m)"],
   ["BA2", "P3", "Quick from detection to alarm", "≤ s", "Detection → alarm (s)"],
   ["BA3", "P3", "Track held until the end", "", "Breaks"],
   ["BA4", "P3", "Each drone tracked separately", "", "Tracks / drones"],
   ["BA5", "P3", "Alarm stayed on until the drones stopped", "", "Alarm dropped for (s)"],
+  ["BA6", "P3", "Warning time: first alarm to closest approach", "≥ s", "Warning time (s)"],
   ["BH1", "P4", "Track kept while hovering", "", "Lost for (s)"],
   ["BH2", "P4", "Still classified as a drone while hovering; note if the data changed", "", "What changed"],
   ["BH3", "P4", "Position accurate while hovering (compared with our GPS)", "≤ m", "Position error (m)"],
 ];
+// training extras (CWA 18150-aligned): shown with an "extra" tag; skip with N/A
+const EXTRA = new Set(["R14", "R15", "R16", "R17", "L6", "D6", "A6", "H4", "B6", "B7", "BL7", "BD9", "BD10", "BA6"]);
 const GROUPS = [["RUN", "Run checks"], ...PHASES.map(([id, n]) => [id, id + " " + n])];
 const BLUE_INFO = [["iris_received", "IRIS data received (date, file names)"], ["iris_window", "Covers UTC from – to"], ["iris_reviewer", "Reviewer"]];
 const ALL = [...RED.map(r => ["red", r[0], r[1], r[2], "", r[3]]), ...BLUE.map(r => ["blue", r[0], r[1], r[2], r[3], r[4]])];
@@ -405,7 +427,7 @@ const seg = id => `<div class="seg" role="group" aria-label="Result ${id}">${["P
 
 function checkRow([team, id, g, q, hint, vl]) {
   const it = state.items?.[id] || {};
-  const head = `<div class="hd"><span class="id">${id}</span><span>${esc(q)}</span></div>`;
+  const head = `<div class="hd"><span class="id">${id}</span><span>${EXTRA.has(id) ? '<span class="xt">extra</span> ' : ""}${esc(q)}</span></div>`;
   const res = `<div class="res">${seg(id)}<span class="hint" id="hint-${id}"></span></div>`;
   const val = `<label class="f"><small>${esc(vl || "Value")}</small>${inp(`items.${id}.value`, it.value)}</label>`;
   const note = `<label class="f note"><small>Note / why</small>${inp(`items.${id}.note`, it.note)}</label>`;
@@ -445,6 +467,7 @@ function render() {
         <li><b>Pass</b> = done as planned / target met. <b>Fail</b> = not done or target missed; write why. <b>N/A</b> = does not apply; write why. Tap again to clear.</li>
         <li>Score the Red team during and right after the run. Score the Blue team when the IRIS data arrives; write the target first, and the card suggests Pass or Fail from the numbers.</li>
         <li>A phase marked <b>Not used</b> makes its rows N/A. Every Blue <b>Fail</b> is a Red team win. <b>Now</b> fills the current UTC time.</li>
+        <li>Rows tagged <span class="xt">extra</span> are training checks from the CWA 18150 test method. Use them when practising for a full test; mark N/A to skip.</li>
       </ul>
       <div class="fields">${RUN_FIELDS.map(([k, l]) => `<label>${esc(l)}${inp("run." + k, s.run?.[k])}</label>`).join("")}</div>
     </section>
@@ -538,9 +561,10 @@ function refresh() {
   for (const [g] of GROUPS) for (const team of ["red", "blue"]) {
     const el = $(`pp-${team}-${g}`), tt = t.groups[g][team]; if (el) el.textContent = `${answered(tt)}/${total(tt)}`;
   }
-  const runFilled = RUN_FIELDS.filter(([k]) => String(s.run?.[k] || "").trim()).length;
+  const core = RUN_FIELDS.filter(([, l]) => !l.startsWith("Extra"));  // extras never count against progress
+  const runFilled = core.filter(([k]) => String(s.run?.[k] || "").trim()).length;
   const phFilled = PHASES.filter(([pid]) => s.phases?.[pid]?.used).length;
-  const prog = { "s-run": [runFilled, RUN_FIELDS.length], "s-phases": [phFilled, PHASES.length], "s-red": [answered(t.red), total(t.red)], "s-blue": [answered(t.blue), total(t.blue)] };
+  const prog = { "s-run": [runFilled, core.length], "s-phases": [phFilled, PHASES.length], "s-red": [answered(t.red), total(t.red)], "s-blue": [answered(t.blue), total(t.blue)] };
   $("nav").querySelectorAll("a[data-sec]").forEach(a => { const v = prog[a.dataset.sec]; a.querySelector("b").textContent = v ? `${v[0]}/${v[1]}` : ""; a.classList.toggle("full", !!v && v[0] === v[1]); });
   // summary
   let h = `<thead><tr><th>Part</th><th class="num">Red pass</th><th class="num">Red fail</th><th class="num">Red score</th><th class="num">Blue pass</th><th class="num">Blue fail</th><th class="num">Blue score</th></tr></thead><tbody>`;
