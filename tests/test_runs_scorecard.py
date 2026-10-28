@@ -104,3 +104,24 @@ def test_tlog_mode_arm_and_warnings(tmp_path):
     assert got == [("flight mode", "STABILIZE"), ("flight mode", "LOITER"), ("event", "armed"),
                    ("autopilot message", "Bad compass health")]
     assert "receive time" in method
+
+
+def test_check_fails_when_a_drone_flew_outside_the_radar_data(tmp_path, capsys):
+    from domeware import check
+
+    s = _session(tmp_path)
+    late = pd.read_parquet(s.streams / "truth" / "B_SIMULATED.parquet")
+    late["t_utc"] = late["t_utc"] + pd.Timedelta(hours=2)  # e.g. a drone clock left on local time
+    late.to_parquet(s.streams / "truth" / "B_SIMULATED.parquet")
+    assert check.run(s) == 1
+    out = capsys.readouterr().out
+    assert "FAIL  drone B_SIMULATED flew outside the radar data (+2.0 h" in out
+    assert "A_SIMULATED flew outside" not in out  # A only starts before the first radar track: a WARN
+
+
+def test_html_report_keeps_tables_lists_and_escapes(tmp_path):
+    from domeware.report import to_html
+
+    h = to_html("# Run <1>\n\n| a | b |\n|---|---|\n| **x** | `y` |\n\n- one\n- two\n\n![p](missing.png)\n", tmp_path)
+    assert "<h1>Run &lt;1&gt;</h1>" in h and "<td><b>x</b></td><td><code>y</code></td>" in h
+    assert "<li>one</li><li>two</li>" in h and "<img" not in h  # a missing picture is skipped, not broken

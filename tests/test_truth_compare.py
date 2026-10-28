@@ -69,3 +69,20 @@ def test_nls_layers_move_about_0_9_m_north_east_in_oulu():
 
     e, n, u = nls_layer_shift(65.1767, 26.044, 2026.8)
     assert 0.6 < e < 0.75 and 0.5 < n < 0.65 and u == 0.0  # ~2.5 cm/yr since 1989, towards north-east
+
+
+def test_radar_time_shift_and_first_plot_found():
+    from domeware.compare import best_time_shift, first_plot
+
+    t = pd.date_range("2026-10-28 09:00:00", periods=121, freq="1s", tz="UTC")
+    e = np.linspace(-900, 900, 121)  # 15 m/s
+    truth = pd.DataFrame({"t_utc": t, "e_m": e, "n_m": 0.0, "u_m": 40.0, "h_rel_takeoff_m": 40.0})
+    # radar reports the drone's position 0.8 s after it was there (stamped late)
+    tr = pd.DataFrame({"t_utc": t[10:110] + pd.Timedelta(seconds=0.8), "e_m": e[10:110], "n_m": 0.0, "u_m": 40.0})
+    r = best_time_shift(truth, tr)
+    assert r["shift_s"] == -0.8 and r["error_h_at_shift_m"] < 0.5 < r["error_h_at_zero_m"]
+    plots = pd.DataFrame({"t_utc": t[[3, 6]], "e_m": [5000.0, e[6]], "n_m": 0.0, "u_m": 40.0, "range_m": [5000.0, 812.0]})
+    when, rng = first_plot(truth, plots, 50.0, t[0])
+    assert when == t[6] and rng == 812.0  # the far plot at t[3] is something else
+    slow = truth.assign(e_m=np.linspace(0, 10, 121))
+    assert best_time_shift(slow, tr.assign(e_m=np.linspace(0, 10, 100))) is None  # hovering: time cannot be measured

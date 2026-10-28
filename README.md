@@ -102,6 +102,14 @@ All three run inside `dw run` when drone truth exists.
   NLS layers onto the GPS frame (ITRF2020 to ETRF2000 at today's epoch).
 - **Speed:** a radar file that has not changed is not converted again; an 80 MB radar file converts in under 10 s.
 
+## In the field and after
+
+- **`dw check <session>`** (offline, seconds): did the radar record the whole flight, does every drone log have
+  positions without gaps, do drone and radar clocks overlap, can every video be timed. OK / WARN / FAIL per line.
+- **`dw compare`** also gives the first radar plot near the drone (before any track) and the **radar time shift**: how
+  many seconds the radar's times must move to fit GPS best (latency plus clock). It fills scorecard check B2.
+- **`dw report`** writes `views/report.html` too: one file with the pictures inside, opens on a phone.
+
 ## Team
 
 - **`dw list`** shows every session in one table and writes `domeware-data/sessions/index.html`.

@@ -14,6 +14,20 @@ Put **everything into one folder**: `C:\Users\nikla_68b56qz\Downloads\ICPI\pilot
 | ArduPilot `.bin` | our own drones' SD cards | If our drones fly |
 | Notes: times of take-offs, what was flown | paper / phone | Write in local time (UTC+2 from 25 Oct) |
 
+## In the field: check before you leave (1 minute, no internet needed)
+
+Copy everything into one folder on the laptop, then:
+
+```powershell
+uv run dw ingest C:\Users\nikla_68b56qz\Work\domeware-data\sessions\2026-10-28_pilot <the folder>
+```
+```powershell
+uv run dw check C:\Users\nikla_68b56qz\Work\domeware-data\sessions\2026-10-28_pilot
+```
+
+Every line says OK, WARN or FAIL. Fix every FAIL before leaving: copy the missing file again, export the log, or
+write the right time down if a clock was wrong.
+
 ## After the pilot: two commands
 
 Open PowerShell and paste these one at a time:

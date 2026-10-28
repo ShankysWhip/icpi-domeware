@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 
 from domeware import runs as R
-from domeware.compare import _interp_truth, _ns, assign_tracks, compare_one
+from domeware.compare import _interp_truth, _ns, assign_tracks, compare_one, load_plots
 from domeware.replay import truth_files
 from domeware.session import Session, now_utc
 
@@ -57,7 +57,8 @@ def _speed(d: pd.DataFrame) -> pd.Series:
     return (np.hypot(d["e_m"].diff(), d["n_m"].diff()) / dt).where(dt > 0)
 
 
-def measure(truths: dict, tracks: pd.DataFrame, a, b, gate_m: float, airborne_m: float = 2.0) -> dict:
+def measure(truths: dict, tracks: pd.DataFrame, a, b, gate_m: float, airborne_m: float = 2.0,
+            plots: pd.DataFrame | None = None) -> dict:
     """Per drone, everything the cards ask for in one window [a, b]."""
     tr_w = _cut(tracks, a, b)
     cut = {name: _cut(d, a, b) for name, d in truths.items()}
@@ -69,7 +70,7 @@ def measure(truths: dict, tracks: pd.DataFrame, a, b, gate_m: float, airborne_m:
         mine = tr_w[tr_w["track_id"].isin([t for t, n in owner.items() if n == name])] if len(tr_w) else tr_w
         if len(mine):
             try:
-                c = compare_one(dw, mine, gate_m, airborne_m)
+                c = compare_one(dw, mine, gate_m, airborne_m, _cut(plots, a, b) if plots is not None else None)
             except ValueError:
                 c = None
             if c:
@@ -227,6 +228,11 @@ def items_for(part: str, m: dict, grid: pd.DataFrame, whole_run: bool, a, b, ext
         put("R12", _fmt(g, 1), f"longest time between fixes in a drone log; {dg}")
         if extra.get("radar_gap") is not None:
             put("B1", _fmt(extra["radar_gap"], 1), extra["radar_gap_note"])
+        sh = {k: r["radar_time_shift_s"] for k, r in per.items() if r.get("radar_time_shift_s") is not None}
+        if sh:
+            k = max(sh, key=lambda x: abs(sh[x]))
+            put("B2", f"{abs(sh[k]):.1f}", f"radar positions match GPS best when radar times are shifted {sh[k]:+.1f} s "
+                f"(negative = stamped late: latency or a fast radar clock); drone {k}: {per[k]['radar_time_shift_note']}")
         if extra.get("phases_found"):
             put("B5", extra["phases_found"], "phase windows in runs.csv that hold radar data")
     if part == "P1" and air:
@@ -271,6 +277,7 @@ def items_for(part: str, m: dict, grid: pd.DataFrame, whole_run: bool, a, b, ext
 
 def run(s: Session, gate_m: float = 50.0, only: str | None = None) -> list[dict]:
     truths, tracks = _load(s)
+    plots = load_plots(s)
     if not truths:
         raise SystemExit("No drone truth with positions in the session: nothing to score (run dw env and dw convert first).")
     df = R.ensure(s)
@@ -289,7 +296,7 @@ def run(s: Session, gate_m: float = 50.0, only: str | None = None) -> list[dict]
         if "RUN" not in w:
             continue
         a, b = w["RUN"]
-        m_run = measure(truths, tracks, a, b, gate_m)
+        m_run = measure(truths, tracks, a, b, gate_m, plots=plots)
         grid = association_grid(m_run, a, b)
         grid.to_parquet(s.views / f"association_{run_id}.parquet", index=False)
         extra = {}
@@ -307,7 +314,7 @@ def run(s: Session, gate_m: float = 50.0, only: str | None = None) -> list[dict]
         for part in phases:  # phase checks only from real phase windows: whole-run numbers on a phase row mislead
             pa, pb = w[part]
             gp = grid[(grid["t_utc"] >= pa) & (grid["t_utc"] <= pb)]
-            for k, v in items_for(part, measure(truths, tracks, pa, pb, gate_m), gp, False, pa, pb, {}).items():
+            for k, v in items_for(part, measure(truths, tracks, pa, pb, gate_m, plots=plots), gp, False, pa, pb, {}).items():
                 items.setdefault(k, v)
         # whole-run detection numbers for the report; not imported into phase checks
         whole = items_for("P2", m_run, grid, True, a, b, {})

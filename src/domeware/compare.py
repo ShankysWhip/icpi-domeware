@@ -54,7 +54,64 @@ def assign_tracks(truths: dict[str, pd.DataFrame], tracks: pd.DataFrame, gate_m:
     return {tid: name for tid, (_, name) in best.items()}
 
 
-def compare_one(truth: pd.DataFrame, tracks: pd.DataFrame, gate_m: float, airborne_m: float) -> dict:
+def load_plots(s: Session) -> pd.DataFrame | None:
+    """Every radar's plots (detections before tracking), or None when the radar export has none."""
+    ps = [s.streams / n / "plots.parquet" for n in s.manifest["streams"] if (s.streams / n / "plots.parquet").exists()]
+    if not ps:
+        return None
+    p = pd.concat([pd.read_parquet(x, columns=["t_utc", "e_m", "n_m", "u_m", "range_m"]) for x in ps], ignore_index=True)
+    p["t_utc"] = pd.to_datetime(p["t_utc"], utc=True)
+    return p.dropna(subset=["e_m", "n_m", "u_m"]).sort_values("t_utc")
+
+
+def best_time_shift(truth: pd.DataFrame, on: pd.DataFrame, max_s: float = 5.0, step_s: float = 0.1,
+                    min_speed_mps: float = 2.0) -> dict | None:
+    """Seconds to add to the radar's times so its positions match the drone best (horizontal median error).
+
+    Negative = the radar stamps a position later than the drone was there (processing latency, or a radar clock ahead
+    of GPS). The two causes cannot be told apart from positions alone. None when it cannot be measured: too few
+    updates, or the drone moved too slowly for time to show up in position.
+    """
+    if len(on) < 10:
+        return None
+    tt, x = _ns(truth["t_utc"]), _ns(on["t_utc"])
+    dt = np.diff(tt) / 1e9
+    speed = np.hypot(np.diff(truth["e_m"].to_numpy()), np.diff(truth["n_m"].to_numpy())) / np.where(dt > 0, dt, np.nan)
+    if not np.nanmedian(speed) >= min_speed_mps:
+        return None
+    lags = np.round(np.arange(-max_s, max_s + step_s / 2, step_s), 3)
+    xy = on[["e_m", "n_m"]].to_numpy()
+    meds = []
+    for lag in lags:
+        q = x + lag * 1e9
+        inside = (q >= tt[0]) & (q <= tt[-1])
+        if inside.sum() < 10:
+            meds.append(np.inf)
+            continue
+        p = np.column_stack([np.interp(q[inside], tt, truth[c].to_numpy()) for c in ("e_m", "n_m")])
+        meds.append(float(np.median(np.hypot(*(xy[inside] - p).T))))
+    i = int(np.argmin(meds))
+    if not np.isfinite(meds[i]):
+        return None
+    zero = meds[int(np.argmin(np.abs(lags)))]
+    return {"shift_s": float(lags[i]), "at_edge": i in (0, len(lags) - 1),
+            "error_h_at_shift_m": round(meds[i], 1), "error_h_at_zero_m": round(zero, 1)}
+
+
+def first_plot(truth: pd.DataFrame, plots: pd.DataFrame | None, gate_m: float, t_air) -> tuple:
+    """First radar plot (before any track) within the gate of the drone, after take-off: (time, range) or (None, None)."""
+    if plots is None or plots.empty:
+        return None, None
+    p = plots[plots["t_utc"] >= t_air]
+    if p.empty:
+        return None, None
+    d = np.linalg.norm(p[["e_m", "n_m", "u_m"]].to_numpy() - _interp_truth(truth, p["t_utc"]), axis=1)
+    hit = p[d < gate_m]
+    return (hit["t_utc"].iloc[0], round(float(hit["range_m"].iloc[0]), 1)) if len(hit) else (None, None)
+
+
+def compare_one(truth: pd.DataFrame, tracks: pd.DataFrame, gate_m: float, airborne_m: float,
+                plots: pd.DataFrame | None = None) -> dict:
     truth = truth.dropna(subset=["e_m", "n_m", "u_m"]).sort_values("t_utc")
     if truth.empty:
         raise ValueError("truth has no positions in the radar frame (no DEM when converted): run dw env, then dw convert")
@@ -89,12 +146,19 @@ def compare_one(truth: pd.DataFrame, tracks: pd.DataFrame, gate_m: float, airbor
         coverage = float(np.mean(near <= 2e9))
     else:
         coverage = 0.0
+    t_plot, r_plot = first_plot(truth, plots, gate_m, t_air)
+    shift = best_time_shift(truth, on)
     e = on.dropna(subset=["err_h_m"])
     stats = lambda s: {"n": int(len(s)), "median": round(float(s.median()), 1), "p90": round(float(s.quantile(.9)), 1),  # noqa: E731
                        "rms": round(float(np.sqrt((s ** 2).mean())), 1)} if len(s) else None
     return {
         "airborne_utc": str(t_air), "landed_utc": str(t_land), "flight_s": _secs(t_air, t_land),
         "drone_track_ids": on_ids,
+        "delay_airborne_to_first_plot_s": _secs(t_air, t_plot), "range_at_first_plot_m": r_plot,
+        "radar_time_shift_s": None if shift is None else shift["shift_s"],
+        "radar_time_shift_note": None if shift is None else (
+            f"horizontal error {shift['error_h_at_zero_m']} m as stamped, {shift['error_h_at_shift_m']} m when shifted"
+            + (" (at the search limit: the real offset may be larger)" if shift["at_edge"] else "")),
         "first_track_utc": str(t_first) if t_first is not None else None,
         "delay_airborne_to_first_track_s": _secs(t_air, t_first),
         "delay_airborne_to_first_DRONE_class_s": _secs(t_air, t_drone),
@@ -179,9 +243,10 @@ def run(s: Session, gate_m: float = 50.0, airborne_m: float = 2.0) -> list[dict]
             tr["h_rel_takeoff_m"] = tr["height_rel_takeoff_m"]
         loaded[f] = tr
     owner = assign_tracks({f.stem: d for f, d in loaded.items()}, tracks, gate_m)
+    plots = load_plots(s)
     for f, tr in loaded.items():
         mine = [t for t, n in owner.items() if n == f.stem]
-        r = compare_one(tr, tracks[tracks["track_id"].isin(mine)], gate_m, airborne_m)
+        r = compare_one(tr, tracks[tracks["track_id"].isin(mine)], gate_m, airborne_m, plots)
         on, truth = r.pop("_on"), r.pop("_truth")
         flying = tracks[(tracks["t_utc"] >= pd.Timestamp(r["airborne_utc"])) & (tracks["t_utc"] <= pd.Timestamp(r["landed_utc"]))]
         r["other_tracks_during_flight"] = len(set(flying["track_id"]) - set(owner))  # none of our drones

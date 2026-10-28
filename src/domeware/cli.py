@@ -11,6 +11,7 @@
   dw scorecard SESSION        Blue/Red scorecard values per run and phase (import them on the Run Scorecards page)
   dw report SESSION           views/report.md
   dw view SESSION             open the replay (loopback only)
+  dw check SESSION            in the field: is the data complete? (offline, seconds)
   dw verify SESSION           check raw files against their hashes
   dw info SESSION             show what is in the session
   dw list [ROOT]              all sessions in one table (+ ROOT/index.html)
@@ -37,7 +38,7 @@ def main(argv: list[str] | None = None) -> int:
         if name == "run":
             p.add_argument("--radius", type=float, default=3000.0, help="environment radius around the radar (m)")
             p.add_argument("--no-env", action="store_true", help="skip terrain/imagery download")
-    for name in ("convert", "replay", "verify", "info", "report", "view", "events"):
+    for name in ("convert", "replay", "verify", "info", "report", "view", "events", "check"):
         sub.add_parser(name).add_argument("session", type=Path)
     p = sub.add_parser("runs", help="runs.csv: runs and phase windows")
     p.add_argument("session", type=Path)
@@ -67,6 +68,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"index: {(a.root or DEFAULT_ROOT) / 'index.html'}")
         return 0
     s = Session(a.session)
+    if a.cmd == "check":
+        from domeware import check
+
+        return check.run(s)
 
     if a.cmd in ("run", "ingest"):
         missing = [str(f) for f in a.files if not Path(f).exists()]

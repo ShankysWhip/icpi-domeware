@@ -47,9 +47,10 @@ def build(s: Session) -> str:
 
     md += ["## Radar vs drone truth", ""]
     if cmp_:
-        keys = ["truth", "flight_s", "drone_track_ids", "delay_airborne_to_first_track_s",
+        keys = ["truth", "flight_s", "drone_track_ids", "delay_airborne_to_first_plot_s", "delay_airborne_to_first_track_s",
                 "delay_airborne_to_first_DRONE_class_s", "delay_airborne_to_first_alarm_s", "tracked_share_of_flight",
-                "track_breaks", "range_at_first_track_m", "max_range_tracked_m", "other_tracks_during_flight"]
+                "track_breaks", "range_at_first_plot_m", "range_at_first_track_m", "max_range_tracked_m",
+                "other_tracks_during_flight", "radar_time_shift_s"]
         md += [_tbl([[k.replace("_", " ")] + [r.get(k) for r in cmp_] for k in keys], ["measure"] + [f"#{i + 1}" for i in range(len(cmp_))]), ""]
         for r in cmp_:
             e = r.get("error_horizontal_m")
@@ -134,5 +135,64 @@ def build(s: Session) -> str:
            f"- {(m['streams'].get('weather') or {}).get('attribution', '')}", ""]
     text = "\n".join(md)
     (v / "report.md").write_text(text, encoding="utf-8")
-    s.note("report: views/report.md")
+    (v / "report.html").write_text(to_html(text, v), encoding="utf-8")
+    s.note("report: views/report.md and views/report.html (one file, pictures inside: opens on a phone)")
     return text
+
+
+def to_html(md: str, views) -> str:
+    """The report as one HTML file (pictures inside), readable on a phone. Handles only what build() writes."""
+    import base64
+    import html
+    import re
+
+    def inline(t: str) -> str:
+        t = html.escape(t, quote=False)
+        t = re.sub(r"`([^`]+)`", r"<code>\1</code>", t)
+        t = re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", t)
+        return re.sub(r"\[([^\]]+)\]\((https?://[^)]+)\)", r'<a href="\2">\1</a>', t)
+
+    out, rows, items = [], [], []
+
+    def close():
+        if rows:
+            head, body = rows[0], [r for r in rows[2:]]
+            out.append('<div class="t"><table><tr>' + "".join(f"<th>{inline(c)}</th>" for c in head) + "</tr>"
+                       + "".join("<tr>" + "".join(f"<td>{inline(c)}</td>" for c in r) + "</tr>" for r in body) + "</table></div>")
+            rows.clear()
+        if items:
+            out.append("<ul>" + "".join(f"<li>{inline(i)}</li>" for i in items) + "</ul>")
+            items.clear()
+
+    for line in md.split("\n"):
+        if line.startswith("|"):
+            if items:
+                close()
+            rows.append([c.strip() for c in line.strip().strip("|").split("|")])
+            continue
+        if line.startswith("- "):
+            if rows:
+                close()
+            items.append(line[2:])
+            continue
+        close()
+        m = re.match(r"!\[[^\]]*\]\(([^)]+)\)", line.strip())
+        if m:
+            p = views / m.group(1)
+            if p.exists() and p.suffix.lower() == ".png":
+                out.append(f'<img alt="{html.escape(p.stem)}" src="data:image/png;base64,{base64.b64encode(p.read_bytes()).decode()}">')
+        elif line.startswith("#"):
+            n = len(line) - len(line.lstrip("#"))
+            out.append(f"<h{n}>{inline(line[n:].strip())}</h{n}>")
+        elif line.strip():
+            out.append(f"<p>{inline(line)}</p>")
+    close()
+    css = ("body{font:15px/1.45 system-ui,sans-serif;margin:0 auto;max-width:960px;padding:12px 16px;color:#1d232a;background:#fafaf8}"
+           "h1{font-size:22px}h2{font-size:18px;margin-top:28px;border-bottom:1px solid #ddd}.t{overflow-x:auto}"
+           "table{border-collapse:collapse;font-size:13px}td,th{border-bottom:1px solid #ddd;padding:5px 8px;text-align:left;"
+           "vertical-align:top}th{background:#eee}img{max-width:100%;margin:8px 0}code{background:#eee;padding:0 3px}"
+           "@media(prefers-color-scheme:dark){body{background:#15191d;color:#e8ebe6}th{background:#252b31}code{background:#252b31}"
+           "td,th,h2{border-color:#333}}")
+    title = re.sub(r"<[^>]+>", "", out[0]) if out else "domeware report"
+    return (f"<!doctype html><html lang=en><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
+            f"<title>{title}</title><style>{css}</style>" + "\n".join(out) + "</html>")
