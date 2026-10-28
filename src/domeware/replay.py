@@ -161,7 +161,7 @@ def log_features(rec, s: Session, site: dict, stats: dict) -> None:
     layers = {n for n, _ in __import__("pyogrio").list_layers(fg)} if fg.exists() else set()
     if "buildings" in layers:
         meshes = []
-        for geom, h in zip(*(lambda g: (g.geometry, g["height_m"]))(gpd.read_file(fg, layer="buildings").explode(index_parts=False))):
+        for geom, h in zip(*(lambda g: (g.geometry, g["height_m"]))(gpd.read_file(fg, layer="buildings").explode(index_parts=False)), strict=False):
             if geom.is_empty or geom.area < 4:
                 continue
             m = trimesh.creation.extrude_polygon(geom, float(h))
@@ -177,7 +177,7 @@ def log_features(rec, s: Session, site: dict, stats: dict) -> None:
             stats["buildings"] = len(meshes)
     if "power_lines" in layers:
         strips = []
-        for geom, h in zip(*(lambda g: (g.geometry, g["height_m"]))(gpd.read_file(fg, layer="power_lines").explode(index_parts=False))):
+        for geom, h in zip(*(lambda g: (g.geometry, g["height_m"]))(gpd.read_file(fg, layer="power_lines").explode(index_parts=False)), strict=False):
             seg = geom.segmentize(25.0)  # follow the terrain between mapped vertices
             xy = np.asarray(seg.coords)[:, :2]
             strips.append(_tm_to_enu(xy[:, 0], xy[:, 1], ground(xy[:, 0], xy[:, 1]) + float(h), site))
@@ -320,7 +320,7 @@ def build(s: Session) -> dict:
             t = rr.TimeColumn("utc", timestamp=_ts(g["t_utc"]))
             pos = g[["e_m", "n_m", "u_m"]].to_numpy(np.float32)
             labels = [f"{tid} {c}{' ALARM' if a else ''}{' = ' + mine if mine else ''}"
-                      for c, a in zip(g["class_name"], g["alarm"].fillna(False))]
+                      for c, a in zip(g["class_name"], g["alarm"].fillna(False), strict=False)]
             rec.send_columns(path, indexes=[t], columns=[*rr.Points3D.columns(positions=pos).partition([1] * len(pos)),
                                                          *rr.Points3D.columns(labels=labels)])
             rec.log(path, rr.Points3D.from_fields(colors=[color], radii=3.0 if tid == focus or mine else 1.8,

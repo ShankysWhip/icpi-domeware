@@ -39,3 +39,9 @@ build-backend = "uv_build"
 
 [tool.ruff]
 line-length = 120
+
+[tool.ruff.lint]
+# explicit, so every laptop checks the same rules whatever its own ruff settings
+select = ["E4", "E7", "E9", "F", "I", "UP", "B"]
+# compact one-line statements are the house style; `== True` is the pandas idiom for nullable columns
+ignore = ["E702", "E712"]

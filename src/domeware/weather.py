@@ -9,10 +9,9 @@ from __future__ import annotations
 import math
 import time
 
-from defusedxml.ElementTree import fromstring as safe_fromstring
-
 import pandas as pd
 import requests
+from defusedxml.ElementTree import fromstring as safe_fromstring
 
 from domeware.session import Session, now_utc
 
@@ -91,7 +90,7 @@ def fetch(s: Session, radius_deg: float = 0.6) -> dict | None:
     if df.empty:
         s.note("weather: FMI returned no stations for this area/time")
         return None
-    df["dist_km"] = [_km(lat, lon, a, b) for a, b in zip(df["lat"], df["lon"])]
+    df["dist_km"] = [_km(lat, lon, a, b) for a, b in zip(df["lat"], df["lon"], strict=False)]
     df.to_parquet(out / "fmi_all_stations.parquet", index=False)
     chosen, cols = {}, []
     for p, (col, unit) in PARAMS.items():

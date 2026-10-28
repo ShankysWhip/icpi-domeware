@@ -23,6 +23,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -231,7 +232,7 @@ def derive_time(df: pd.DataFrame, opts: ConvertOptions) -> tuple[pd.DataFrame, d
 # --------------------------------------------------------------------------- geometry
 
 def n2000_to_ellipsoidal(lat: np.ndarray, lon: np.ndarray, h_n2000: np.ndarray,
-                         proj_dir: str = r"C:/Users/nikla_68b56qz/Work/domeware-vendor/proj") -> tuple[np.ndarray, str]:
+                         proj_dir: str = str(Path.home() / "Work" / "domeware-vendor" / "proj")) -> tuple[np.ndarray, str]:
     """N2000 -> ETRS89 ellipsoidal using the vendored FIN2023N2000 grid. Fails hard on ballpark."""
     import pyproj.datadir
     from pyproj import CRS, Transformer

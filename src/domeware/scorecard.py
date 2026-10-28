@@ -125,7 +125,7 @@ def _merges_swaps(grid: pd.DataFrame) -> tuple[int, int]:
     g = grid.dropna(subset=["track_id"])
     merges = int((g.groupby(["t_utc", "track_id"])["drone"].nunique() > 1).sum()) if len(g) else 0
     owner, swaps = {}, 0
-    for t, rows in g.sort_values("t_utc").groupby("t_utc"):
+    for _t, rows in g.sort_values("t_utc").groupby("t_utc"):
         for drone, tid in zip(rows["drone"], rows["track_id"], strict=True):
             prev = owner.get(tid)
             if prev is not None and prev != drone:

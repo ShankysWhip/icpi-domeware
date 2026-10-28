@@ -17,10 +17,11 @@ import pytest
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
-from domeware.adapters import robin_xml as R
+import os  # noqa: E402
 
-import os
-ARCHIVE = Path(os.environ.get("DOMEWARE_SAMPLE_ARCHIVE", "C:/Users/nikla_68b56qz/Work/domeware-data/archive-2026-10-21"))  # real sample run; tests skip if missing
+from domeware.adapters import robin_xml as R  # noqa: E402
+
+ARCHIVE = Path(os.environ.get("DOMEWARE_SAMPLE_ARCHIVE", str(Path.home() / "Work" / "domeware-data" / "archive-2026-10-21")))  # real sample run; tests skip if missing
 REAL_XML = ARCHIVE / "ozmasto2.xml"
 REAL_CFG = ARCHIVE / "20261021_103214" / "cfg"
 

@@ -40,7 +40,7 @@ def _surface(s: Session, align_m: float):
         try:
             b = gpd.read_file(s.env / "features.gpkg", layer="buildings")
             if len(b):
-                obst = np.maximum(obst, rasterize(zip(b.geometry, b["height_m"]), out_shape=shape, transform=tr, fill=0))
+                obst = np.maximum(obst, rasterize(zip(b.geometry, b["height_m"], strict=False), out_shape=shape, transform=tr, fill=0))
         except Exception:  # no buildings layer is fine: terrain + canopy still apply
             pass
     return dem, dem + obst, tr

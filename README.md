@@ -5,6 +5,8 @@ session and replays it in its real environment (NLS terrain + aerial photo).
 
 ## Use
 
+Short guide in Finnish and English: [docs/USER-GUIDE.md](docs/USER-GUIDE.md). How it is built: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). New laptop: [docs/SETUP.md](docs/SETUP.md).
+
 ```
 uv run dw run <session folder> <files or folders from the test>
 ```

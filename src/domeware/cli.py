@@ -16,6 +16,7 @@
   dw info SESSION             show what is in the session
   dw list [ROOT]              all sessions in one table (+ ROOT/index.html)
   dw doctor                   check this laptop has everything domeware needs
+  dw setup                    new laptop: fetch the height grids and leap-second list, then run doctor
 """
 
 from __future__ import annotations
@@ -49,6 +50,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--gate", type=float, default=50.0)
     sub.add_parser("list", help="all sessions in one table").add_argument("root", type=Path, nargs="?")
     sub.add_parser("doctor", help="check this laptop")
+    sub.add_parser("setup", help="fetch height grids and leap-second list, then doctor")
     p = sub.add_parser("env")
     p.add_argument("session", type=Path)
     p.add_argument("--radius", type=float, default=3000.0)
@@ -56,6 +58,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("session", type=Path)
     p.add_argument("--gate", type=float, default=50.0, help="association gate, metres (median 3D distance)")
     a = ap.parse_args(argv)
+    if a.cmd == "setup":
+        from domeware.overview import setup
+
+        return setup()
     if a.cmd == "doctor":
         from domeware.overview import doctor
 

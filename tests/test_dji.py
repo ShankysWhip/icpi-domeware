@@ -73,8 +73,7 @@ def main() -> None:
     print("geoid/vertical op:", desc[:120])
     print("radar h_ellip:", round(site.h_ellip_m, 2), "(N ~", round(site.h_ellip_m - 97.5, 2), "m)")
     print("time model:", meta["time_model"]["segments"])
-    print("t_utc error ms  flying p95=%.1f max=%.1f | ground p95=%.1f" % (
-        err_ms[flying].quantile(0.95), err_ms[flying].max(), err_ms[~flying].quantile(0.95)))
+    print(f"t_utc error ms  flying p95={err_ms[flying].quantile(0.95):.1f} max={err_ms[flying].max():.1f} | ground p95={err_ms[~flying].quantile(0.95):.1f}")
     print("rows by method:", out["t_utc_method"].value_counts().to_dict())
     print("max slant range m:", round(float(out["slant_range_m"].max()), 1),
           "| max h_n2000:", round(float(out["h_n2000_m"].max()), 1))

@@ -1,3 +1,19 @@
+# Quick setup for a co-worker (about 10 minutes, no admin)
+
+1. Install uv and git as a normal user: `winget install --scope user astral-sh.uv`, then `winget install --scope user Git.Git`
+2. `git clone https://github.com/ShankysWhip/domeware.git %USERPROFILE%\Work\domeware`
+3. In that folder: `uv sync`
+4. `uv run dw setup` fetches the height grids and the leap-second list (hash-checked), then runs `dw doctor`.
+   Every line should say OK. `--` for ffmpeg only means H.264/H.265 video will not play in the viewer.
+5. Try it: `uv run dw check <a session folder>` or `uv run dw list`.
+
+Sessions live in `%USERPROFILE%\Work\domeware-data\sessions`. Open a replay with `uv run dw view <session>`
+(it listens on 127.0.0.1 only; if Windows asks about the firewall, press Cancel).
+
+The rest of this page is the original record of how Niklas's laptop was set up (23 Oct 2026).
+
+---
+
 > Copied from Work/domeware-vendor/SETUP.md (23 Oct 2026). The vendor data files (PROJ grids, leap table) are not in git: download them as listed below into `Work/domeware-vendor`.
 
 # Domeware: laptop setup (no admin needed)

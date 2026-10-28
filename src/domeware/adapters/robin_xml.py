@@ -30,8 +30,6 @@ import re
 import struct
 import sys
 import xml.etree.ElementTree as ET
-
-from defusedxml.ElementTree import fromstring as safe_fromstring
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -39,6 +37,7 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
+from defusedxml.ElementTree import fromstring as safe_fromstring
 
 ADAPTER = "robin_xml_proto"
 ADAPTER_VERSION = "0.1.0"
@@ -988,7 +987,7 @@ def build_site(status_df: pd.DataFrame | None, cfg_dir: Path | None, report: dic
     site: dict = {"schema": "domeware-proto-site-0.1", "provenance": {}}
     if status_df is not None and len(status_df):
         f = status_df.iloc[0]
-        g = lambda c: (None if c not in f or pd.isna(f[c]) else f[c])
+        g = lambda c: (None if c not in f or pd.isna(f[c]) else f[c])  # noqa: E731
         site["radar"] = {
             "name": g("s_name"), "software_version": g("s_version"), "sensor_type": g("s_sensor_type"),
             "sensor_id": g("s_id"),

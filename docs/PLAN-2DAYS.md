@@ -25,10 +25,10 @@ Status: ⬜ not started · 🔄 in progress · ✅ done · ⛔ blocked (needs Ni
 | # | Work package | What you get | Time | Usage | Status |
 |---|---|---|---|---|---|
 | 6 | **Exact coordinates** | The ~0.9 m ETRS89↔WGS84 plate-motion shift done properly with the NKG grid. A checked datum for every height column. Report says "sub-metre" only when true. | 1.5 h | 4 % | ✅ 0.89 m shift applied in the replay (ITRF2020 to ETRF2000); heights already on the N2000 grid |
-| 7 | **Scoring hooks (CWA-style)** | Explicit 1 s time grid; association table (which track was which drone, per second); detection under the 4 definitions (first plot, confirmed track, classified, alarm); gaps > 1 s. No final CWA scores yet: hooks only, as decided. | 3 h | 8 % | 🔄 1 s grid, association, gaps; first track / DRONE class / alarm done, first plot still to do |
-| 8 | **One-step setup for co-workers** | `setup.ps1`: uv sync, vendor grids + leap table download, PlotJuggler hint, self-test. A co-worker goes from `git clone` to a working replay in about 10 min. | 1.5 h | 4 % | 🔄 `dw doctor` checks and prints fixes; grid download still manual |
+| 7 | **Scoring hooks (CWA-style)** | Explicit 1 s time grid; association table (which track was which drone, per second); detection under the 4 definitions (first plot, confirmed track, classified, alarm); gaps > 1 s. No final CWA scores yet: hooks only, as decided. | 3 h | 8 % | ✅ 1 s grid, association, gaps; first plot / first track / DRONE class / alarm; radar time shift |
+| 8 | **One-step setup for co-workers** | `setup.ps1`: uv sync, vendor grids + leap table download, PlotJuggler hint, self-test. A co-worker goes from `git clone` to a working replay in about 10 min. | 1.5 h | 4 % | ✅ `dw setup` downloads and hash-checks grids, then `dw doctor` |
 | 9 | **Session overview** | `dw list`: all sessions in one table (date, site, runs, drones, first-detection delay, errors). An HTML index page opens with a double-click. | 1.5 h | 4 % | ✅ |
-| 10 | **Docs + clean-up** | User guide (FI/EN short), architecture page, updated README; code review pass; all tests green. | 1.5 h | 4 % | ⬜ |
+| 10 | **Docs + clean-up** | User guide (FI/EN short), architecture page, updated README; code review pass; all tests green. | 1.5 h | 4 % | ✅ docs/USER-GUIDE.md (FI/EN), docs/ARCHITECTURE.md, ruff rules pinned and clean |
 
 **Day 2 total: about 9 h, about 24 %.**
 

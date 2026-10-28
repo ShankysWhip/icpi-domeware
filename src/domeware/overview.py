@@ -86,7 +86,7 @@ def doctor() -> int:
     grids = ["fi_nls_fin2023n2000.tif"]
     for g in grids:
         check((PROJ_DIR / g).exists(), f"height grid {g}",
-              f"copy the domeware-vendor folder from a co-worker to {PROJ_DIR.parent} (see docs/SETUP.md); "
+              "run: uv run dw setup (or copy domeware-vendor from a co-worker); "
               "without it heights are ~18 m off")
     check(date.today() < date(2027, 6, 28), "GPS-UTC leap second table (valid to 2027-06-28)",
           "update GPS_UTC_LEAP_S in adapters/truth.py from IERS Bulletin C")
@@ -99,3 +99,50 @@ def doctor() -> int:
     check(data.exists(), f"data folder {data}", f"create it: mkdir {data}")
     print("All good." if not fixes else f"{fixes} thing(s) to fix.")
     return 1 if fixes else 0
+
+
+VENDOR = Path.home() / "Work" / "domeware-vendor"
+# Files domeware needs offline. Hashes pinned on 23 Oct 2026; a different file is refused, never used.
+VENDOR_FILES = [
+    ("proj/fi_nls_fin2023n2000.tif", "https://cdn.proj.org/fi_nls_fin2023n2000.tif",
+     "82ce62ed36910a61fc79010702b3e48fdb45cdfc90a248114ac90a7cb5e30cf7"),
+    ("proj/eur_nkg_nkgrf17vel.tif", "https://cdn.proj.org/eur_nkg_nkgrf17vel.tif",
+     "515f68aeb59f659a3f3c340626cd060f58de6f93b4546df67732b906949e0d66"),
+    ("time/leap-seconds.list", "https://data.iana.org/time-zones/tzdb/leap-seconds.list",
+     "db5a895f16853b03bfc865e8d68f9fc8710ef1740e3400c701cd46a5bbbc3433"),
+]
+
+
+def setup(vendor: Path = VENDOR) -> int:
+    """Fetch the height grids and the leap-second list into domeware-vendor, check their hashes, then run doctor."""
+    import hashlib
+
+    import requests
+
+    bad = 0
+    for rel, url, sha in VENDOR_FILES:
+        dst = vendor / rel
+        if dst.exists() and hashlib.sha256(dst.read_bytes()).hexdigest() == sha:
+            print(f"  OK   {rel} (already there)")
+            continue
+        if rel.startswith("time/") and dst.exists():
+            print(f"  OK   {rel} (kept: a newer IANA list replaces the pinned one)")
+            continue
+        try:
+            r = requests.get(url, timeout=60)
+            r.raise_for_status()
+        except requests.RequestException as e:
+            print(f"  FIX  {rel}: download failed ({e}); copy domeware-vendor from a co-worker instead")
+            bad += 1
+            continue
+        got = hashlib.sha256(r.content).hexdigest()
+        if got != sha and not rel.startswith("time/"):
+            print(f"  FIX  {rel}: the server sent a different file (sha256 {got[:12]}...); not saved")
+            bad += 1
+            continue
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_bytes(r.content)
+        print(f"  OK   {rel} downloaded ({len(r.content) / 1e6:.1f} MB)")
+    if vendor == VENDOR:
+        return doctor() or (1 if bad else 0)
+    return 1 if bad else 0
