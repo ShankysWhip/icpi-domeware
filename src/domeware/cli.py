@@ -9,6 +9,8 @@
   dw events SESSION           drone events (take-off, landing, modes, failsafes) on the UTC clock
   dw runs SESSION             runs.csv: runs from take-offs/landings; --card FILE adds phase times from a scorecard
   dw scorecard SESSION        Blue/Red scorecard values per run and phase (import them on the Run Scorecards page)
+  dw performance SESSION      radar detection share by range and height (views/performance.png)
+  dw kml SESSION              views/session.kml for Google Earth (time slider)
   dw report SESSION           views/report.md
   dw view SESSION             open the replay (loopback only)
   dw check SESSION            in the field: is the data complete? (offline, seconds)
@@ -39,7 +41,7 @@ def main(argv: list[str] | None = None) -> int:
         if name == "run":
             p.add_argument("--radius", type=float, default=3000.0, help="environment radius around the radar (m)")
             p.add_argument("--no-env", action="store_true", help="skip terrain/imagery download")
-    for name in ("convert", "replay", "verify", "info", "report", "view", "events", "check"):
+    for name in ("convert", "replay", "verify", "info", "report", "view", "events", "check", "performance", "kml"):
         sub.add_parser(name).add_argument("session", type=Path)
     p = sub.add_parser("runs", help="runs.csv: runs and phase windows")
     p.add_argument("session", type=Path)
@@ -115,7 +117,7 @@ def main(argv: list[str] | None = None) -> int:
             weather.fetch(s)
         except Exception as e:  # weather is context; a failed fetch must not stop the run
             s.note(f"weather: not fetched ({e})")
-    has_truth = a.cmd in ("run", "events", "runs", "scorecard") and (any(s.streams.glob("truth/*.parquet")) or any(s.streams.glob("dji/*_osd.parquet")))
+    has_truth = a.cmd in ("run", "events", "runs", "scorecard", "performance") and (any(s.streams.glob("truth/*.parquet")) or any(s.streams.glob("dji/*_osd.parquet")))
     if a.cmd == "events" or (a.cmd == "run" and has_truth):
         from domeware import events
 
@@ -142,6 +144,15 @@ def main(argv: list[str] | None = None) -> int:
 
         for c in scorecard.run(s, gate_m=getattr(a, "gate", 50.0), only=getattr(a, "run", None)):
             print(f"  {c['run_id']}: {len(c['items'])} values -> views/scorecard_{c['run_id']}.json")
+    if a.cmd == "performance" or (a.cmd == "run" and has_truth):
+        from domeware import performance
+
+        performance.build(s)
+    if a.cmd == "kml" or a.cmd == "run":
+        from domeware import kml
+
+        if kml.build(s) is None and a.cmd == "kml":
+            print("nothing to draw: no drone positions or radar tracks with positions")
     if a.cmd in ("run", "report"):
         from domeware import report
 

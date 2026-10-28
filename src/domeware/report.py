@@ -83,6 +83,15 @@ def build(s: Session) -> str:
                _tbl([[k, x["value"], x["note"]] for k, x in c["items"].items()], ["check", "value", "how measured"]), "",
                f"Import `{p.name}` on the Run Scorecards page (Import domeware values). Results stay with the reviewers.", ""]
 
+    perf = m.get("performance")
+    if perf and (v / "performance.png").exists():
+        md += ["## Detection by range and height", "",
+               f"The radar had its own track on our drones for **{perf['share_overall']:.0%}** of {perf['drone_seconds']} "
+               "airborne drone-seconds (" + ", ".join(f"{k} {x:.0%}" for k, x in perf["share_by_drone"].items()) + "). "
+               "Measured share for these flights, not a general probability of detection; each bar shows its seconds.", "",
+               "![performance](performance.png)", ""]
+    if (v / "session.kml").exists():
+        md += ["Google Earth: open `views/session.kml` (desktop or phone) and use the time slider.", ""]
     pvf_p = v / "planned_vs_flown.json"
     if pvf_p.exists():
         pvf = json.loads(pvf_p.read_text(encoding="utf-8"))

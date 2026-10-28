@@ -161,3 +161,25 @@ def test_no_radar_in_window_is_not_zero_seconds():
     t = pd.Series(pd.date_range(T0, periods=5, freq="2s"))
     assert _gap_window(t, T0 + pd.Timedelta(hours=1), T0 + pd.Timedelta(hours=2)) is None
     assert _gap_window(t, T0 - pd.Timedelta(seconds=30), T0 + pd.Timedelta(seconds=8)) == 30.0  # silence before data
+
+
+def test_detection_share_by_range_and_kml(tmp_path):
+    import xml.dom.minidom
+
+    from domeware import kml, performance
+
+    s = _session(tmp_path)
+    for f in (s.streams / "truth").glob("*.parquet"):
+        d = pd.read_parquet(f)
+        d["lat_deg"], d["lon_deg"] = 65.17 + d["n_m"] / 111_000, 26.04 + d["e_m"] / 46_600
+        d.to_parquet(f)
+    tr = pd.read_parquet(s.streams / "radar" / "tracks.parquet")
+    tr["lat_deg"], tr["lon_deg"], tr["alt_m"] = 65.17 + tr["n_m"] / 111_000, 26.04 + tr["e_m"] / 46_600, 100.0
+    tr.to_parquet(s.streams / "radar" / "tracks.parquet")
+    out = performance.build(s)
+    sec = out["ground_range_m"]
+    assert sec["seconds"].sum() > 200 and 0 < sec["share"].max() <= 1
+    assert (s.views / "performance.png").exists()
+    k = kml.build(s)
+    xml.dom.minidom.parseString(k)  # valid XML
+    assert k.count("<gx:Track>") >= 4 and "drone A_SIMULATED" in k
