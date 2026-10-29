@@ -181,7 +181,7 @@ def build(s: Session) -> str:
 
     md += ["## Pictures", ""] + [f"![{p}]({p})" for p in stats.get("quicklooks", [])] + \
           [f"![{p.name}]({p.name})" for p in sorted(v.glob("compare_*.png"))] + [""]
-    md += ["## Replay", "", "`uv run rerun --bind 127.0.0.1 --port auto <session>\\views\\replay.rrd`", ""]
+    md += ["## Replay", "", "`uv run dw view <session>` (viewer telemetry off, listens on 127.0.0.1 only)", ""]
     md += ["## Known limits", "",
            "- The radar's altitude datum is unconfirmed; vertical errors are indicative until the radar owner confirms it.",
            f"- NLS layers (ETRS89) are moved onto the GPS frame by {(stats.get('nls_layers_shifted_m') or [0, 0])[0]} m east and "

@@ -31,8 +31,8 @@ uv run dw view <session folder>
 Open it yourself, in your own PowerShell. Bind to 127.0.0.1 so Windows doesn't create firewall rules:
 
 ```
-rerun analytics disable
-rerun --bind 127.0.0.1 --port auto <session>\views\replay.rrd
+uv run rerun analytics disable
+uv run rerun --bind 127.0.0.1 --port auto <session>\views\replay.rrd
 ```
 
 If a Windows Firewall prompt appears anyway, press **Cancel**.

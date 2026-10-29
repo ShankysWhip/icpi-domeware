@@ -45,7 +45,7 @@ if a drone log or SRT is included, writes the radar-vs-drone numbers.
 ## Look at the result
 
 ```powershell
-uv run rerun --bind 127.0.0.1 --port auto C:\Users\nikla_68b56qz\Work\domeware-data\sessions\2026-10-28_pilot\views\replay.rrd
+uv run dw view C:\Users\nikla_68b56qz\Work\domeware-data\sessions\2026-10-28_pilot
 ```
 
 The numbers are in `C:\Users\nikla_68b56qz\Work\domeware-data\sessions\2026-10-28_pilot\views\compare.md`.
