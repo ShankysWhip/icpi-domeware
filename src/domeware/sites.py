@@ -3,6 +3,7 @@
 A profile is the radar's declared position and orientation at a test site, saved once from a real session:
   dw site save <session> ouluzone       -> domeware-data/sites/ouluzone/site.json (outside git: a site is data)
   dw site list
+  dw site use <session> ouluzone       -> a session without radar data yet gets this site (the radar data replaces it)
 Then a SIMULATED run can be put at that exact place, in its real terrain, photo, buildings and forest:
   dw simulate ouluzone <new session> --drones 2 --latency 0.5 --noise 4
 It flies the pilot's phase profile (P1 low passes, P2 out to range and back, P3 approach to a stand-off point,
@@ -45,6 +46,18 @@ def load(name: str) -> dict:
     if not p.exists():
         raise SystemExit(f"No site profile '{name}'. Known: {', '.join(list_sites()) or 'none'} (dw site save <session> <name>)")
     return json.loads(p.read_text(encoding="utf-8"))
+
+
+def use(s: Session, name: str) -> dict:
+    """Give a session the site of a profile until its own radar data arrives; never replaces a radar-declared site."""
+    old = s.manifest.get("site")
+    if old and not old.get("from_profile"):
+        raise SystemExit(f"This session already has a site declared by its radar ({old.get('source')}); kept.")
+    site = load(name)
+    s.manifest["site"] = {k: site.get(k) for k in KEYS} | {"source": f"site profile {name} (until the radar data arrives)",
+                                                          "from_profile": name}
+    s.save()
+    return s.manifest["site"]
 
 
 def list_sites() -> list[str]:

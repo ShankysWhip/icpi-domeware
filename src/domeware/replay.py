@@ -269,6 +269,18 @@ def events_for(tr: pd.DataFrame, track_id: int) -> list[tuple[pd.Timestamp, str]
     return sorted(out)
 
 
+def _activity_span(s: Session, truths: dict, tracks: pd.DataFrame):
+    """First and last moment anything happened (drones, radar tracks, pictures); None if nothing is timed."""
+    from domeware.images import pictures
+
+    times = [pd.to_datetime(d["t_utc"], utc=True) for d in truths.values()]
+    if len(tracks):
+        times.append(pd.to_datetime(tracks["t_utc"], utc=True))
+    times.append(pd.Series([p["t_utc"] for p in pictures(s) if p["t_utc"] is not None], dtype="datetime64[ns, UTC]"))
+    times = [t for t in times if len(t)]
+    return (min(t.min() for t in times), max(t.max() for t in times)) if times else None
+
+
 def build(s: Session) -> dict:
     site = s.manifest.get("site")
     if not site:
@@ -412,8 +424,13 @@ def build(s: Session) -> dict:
                 rec.send_columns(f"plots/horizontal_error_m/{name}", indexes=[te], columns=rr.Scalars.columns(scalars=eh))
                 rec.log(f"plots/horizontal_error_m/{name}", rr.SeriesLines(colors=[rgb], names=[name]), static=True)
             stats[f"error_vectors_{name}"] = int(ok.sum())
-    if truths:
-        rec.log("legend", rr.TextDocument("\n".join(legend), media_type=rr.MediaType.MARKDOWN), static=True)
+    from domeware.parties import log_parties
+
+    party_legend = log_parties(rec, s, site, _activity_span(s, truths, tracks_all), stats)
+    show_legend = bool(truths or party_legend)
+    if show_legend:
+        lines = (legend if truths else []) + party_legend
+        rec.log("legend", rr.TextDocument("\n".join(lines), media_type=rr.MediaType.MARKDOWN), static=True)
     stats["track_owner"] = {str(k): v for k, v in owner.items()}
 
     wx = s.streams / "weather" / "fmi_nearest.parquet"
@@ -489,7 +506,7 @@ def build(s: Session) -> dict:
                            if truths else []),
                          rrb.TimeSeriesView(name="Focus track: radar's judgement", origin="/focus"),
                          rrb.TextLogView(name="Events", origin="/events"),
-                         *([rrb.TextDocumentView(name="Legend", origin="/legend")] if truths else [])),
+                         *([rrb.TextDocumentView(name="Legend", origin="/legend")] if show_legend else [])),
             column_shares=[3, 1]),
         rrb.TimePanel(timeline="utc", state="expanded"), collapse_panels=True)
     rec.send_blueprint(bp)

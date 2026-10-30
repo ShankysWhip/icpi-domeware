@@ -25,6 +25,8 @@
   dw doctor                   check this laptop has everything domeware needs
   dw setup                    new laptop: fetch the height grids and leap-second list, then run doctor
   dw site save SESSION NAME   keep a test site (radar position) as a named profile; dw site list
+  dw site use SESSION NAME    use a saved site before the radar data arrives (the radar data replaces it)
+  dw parties SESSION          everyone at the test and where (radar, take-offs, pilots, weather, RF...); adds parties.csv
   dw simulate SITE SESSION    a SIMULATED phase-profile run at a saved site, in its real environment
 """
 
@@ -48,7 +50,7 @@ def main(argv: list[str] | None = None) -> int:
         if name == "run":
             p.add_argument("--radius", type=float, default=3000.0, help="environment radius around the radar (m)")
             p.add_argument("--no-env", action="store_true", help="skip terrain/imagery download")
-    for name in ("convert", "replay", "verify", "info", "report", "view", "events", "check", "performance", "kml", "timeline", "seal", "courageous"):
+    for name in ("parties", "convert", "replay", "verify", "info", "report", "view", "events", "check", "performance", "kml", "timeline", "seal", "courageous"):
         sub.add_parser(name).add_argument("session", type=Path)
     p = sub.add_parser("sync", help="copy a sealed session to another disk and check it")
     p.add_argument("session", type=Path)
@@ -69,7 +71,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("doctor", help="check this laptop")
     sub.add_parser("setup", help="fetch height grids and leap-second list, then doctor")
     p = sub.add_parser("site", help="test-site profiles")
-    p.add_argument("action", choices=["save", "list"])
+    p.add_argument("action", choices=["save", "list", "use"])
     p.add_argument("session", type=Path, nargs="?")
     p.add_argument("name", nargs="?")
     p = sub.add_parser("simulate", help="SIMULATED run at a saved site")
@@ -95,7 +97,11 @@ def main(argv: list[str] | None = None) -> int:
             print(chr(10).join(sites.list_sites()) or "no site profiles yet: dw site save <session> <name>")
             return 0
         if not (a.session and a.name):
-            raise SystemExit("usage: dw site save <session> <name>")
+            raise SystemExit(f"usage: dw site {a.action} <session> <name>")
+        if a.action == "use":
+            site = sites.use(Session(a.session), a.name)
+            print(f"{a.session}: site {site['name']} from profile {a.name}; next: dw env, then dw replay")
+            return 0
         print(f"saved {sites.save(Session(a.session), a.name)}")
         return 0
     if a.cmd == "simulate":
@@ -129,6 +135,15 @@ def main(argv: list[str] | None = None) -> int:
         problems = custody.sync(s, a.dest)
         print(chr(10).join(problems) if problems else f"OK: copy at {a.dest / s.root.name} matches the seal")
         return 1 if problems else 0
+    if a.cmd == "parties":
+        from domeware import parties
+
+        df, problems = parties.load(s)
+        print(df.drop(columns=["height_assumed"], errors="ignore").to_string(index=False) if len(df) else "no parties yet")
+        print(chr(10).join(problems))
+        if parties.template(s):
+            print(f"wrote {s.root / 'parties.csv'}: add a row per person or device the data does not show")
+        return 0
     if a.cmd == "note":
         from domeware import notes
 

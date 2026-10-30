@@ -1,0 +1,85 @@
+"""Everyone at the test, in the replay. All positions and weather here are SIMULATED, made in the test."""
+
+import json
+
+import numpy as np
+import pandas as pd
+import pytest
+
+from domeware import parties, sites
+from domeware.session import Session
+
+SITE = {"name": "SIM radar", "lat_deg": 65.0, "lon_deg": 26.0, "alt_m": 100.0, "ground_level_m": 85.0,
+        "source": "SIMULATED"}
+
+
+def _session(tmp_path) -> Session:
+    s = Session(tmp_path / "S")
+    s.manifest["site"] = dict(SITE)
+    s.manifest["streams"]["weather/onsite_vaisala/SIM_WXT"] = {"device": "SIMWXT", "lat_deg": "65.0003", "lon_deg": "26.0002"}
+    (s.streams / "dji_details").mkdir(parents=True)
+    (s.streams / "dji_details" / "details.json").write_text(json.dumps({"aircraft_name": "SIM M400", "latitude": 65.0001,
+                                                                        "longitude": 25.9995}))
+    s.save()
+    return s
+
+
+def test_parties_come_from_the_data_and_the_team_wins(tmp_path):
+    s = _session(tmp_path)
+    df, problems = parties.load(s)
+    got = dict(zip(df["name"], df["kind"], strict=True))
+    assert got == {"SIM radar": "radar", "SIM M400 take-off": "drone_home", "Weather SIMWXT": "weather"}
+    radar = df[df["kind"] == "radar"].iloc[0]
+    assert radar["height_m"] == pytest.approx(15.0) and not radar["height_assumed"]  # alt 100 - ground 85
+    assert df[df["kind"] == "weather"].iloc[0]["height_assumed"]  # the export does not state the sensor height
+    (s.root / "parties.csv").write_text(
+        "name,kind,lat_deg,lon_deg,height_m,heading_deg,fov_deg,range_m,note\n"
+        "Weather SIMWXT,weather,65.0004,26.0002,3,,,,mast measured by the team\n"
+        "EO camera,camera,65.0002,26.0001,4,200,30,800,\n"
+        "Bad kind,tank,65,26,,,,,\n"
+        "No place,pilot,,26,,,,,\n", encoding="utf-8")
+    df, problems = parties.load(s)
+    w = df[df["name"] == "Weather SIMWXT"].iloc[0]
+    assert w["height_m"] == 3 and w["source"] == "parties.csv (team)" and not w["height_assumed"]
+    assert "EO camera" in set(df["name"]) and len(problems) == 2
+    assert any("row 4" in p and "kind 'tank'" in p for p in problems) and any("row 5" in p for p in problems)
+    assert not parties.template(s)  # never overwrites the team's file
+
+
+def test_wind_arrow_points_where_the_wind_blows():
+    v = parties.wind_vectors([5.0, 2.0], [180.0, 270.0])  # from the south, from the west
+    assert np.allclose(v[0], [0, 50, 0], atol=1e-4) and np.allclose(v[1], [20, 0, 0], atol=1e-4)
+
+
+def test_site_profile_until_the_radar_data_arrives(tmp_path, monkeypatch):
+    monkeypatch.setattr(sites, "SITES", tmp_path / "sites")
+    (tmp_path / "sites" / "simsite").mkdir(parents=True)
+    (tmp_path / "sites" / "simsite" / "site.json").write_text(json.dumps(SITE | {"azimuth_deg": 0, "alt_datum": "x"}))
+    s = Session(tmp_path / "P")
+    s.save()
+    assert sites.use(s, "simsite")["from_profile"] == "simsite"
+    r = Session(tmp_path / "R")
+    r.manifest["site"] = dict(SITE)  # declared by the radar
+    r.save()
+    with pytest.raises(SystemExit, match="declared by its radar"):
+        sites.use(r, "simsite")
+
+
+def test_parties_and_wind_are_drawn_in_the_replay(tmp_path):
+    import rerun as rr
+
+    s = _session(tmp_path)
+    (s.root / "parties.csv").write_text("name,kind,lat_deg,lon_deg,height_m,heading_deg,fov_deg,range_m,note\n"
+                                        "EO camera,camera,65.0002,26.0001,4,200,30,800,\n", encoding="utf-8")
+    t = pd.date_range("2026-10-28 09:00", periods=10, freq="1min", tz="UTC")
+    (s.streams / "weather").mkdir(parents=True)
+    pd.DataFrame({"t_utc": t, "wind_ms": 4.0, "wind_dir_deg": 190.0, "gust_ms": 7.5}).to_parquet(
+        s.streams / "weather" / "onsite_vaisala.parquet")
+    rec = rr.RecordingStream("domeware-test")
+    rec.save(str(tmp_path / "t.rrd"))
+    stats: dict = {}
+    legend = parties.log_parties(rec, s, SITE, (t[2], t[4]), stats)
+    rec.flush()
+    assert {p["name"] for p in stats["parties"]} == {"SIM radar", "SIM M400 take-off", "Weather SIMWXT", "EO camera"}
+    assert stats["wind_arrow_s"] == 241  # 09:01:00 .. 09:05:00 every second (2 min before the activity)
+    assert any("EO camera" in line and "camera" in line for line in legend)

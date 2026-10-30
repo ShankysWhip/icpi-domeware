@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
 
@@ -61,7 +62,15 @@ def convert_robin(s: Session) -> None:
         site = json.loads((out / "site.json").read_text(encoding="utf-8"))
         radar = site.get("radar") or {}
         pos = radar.get("position") or {}
-        if pos.get("lat_deg") is not None and not s.manifest.get("site"):
+        old = s.manifest.get("site") or {}
+        if pos.get("lat_deg") is not None and (not old or old.get("from_profile")):  # the radar's own word beats a profile
+            if old:
+                from domeware.replay import enu
+
+                e, n, u = enu(pos["lat_deg"], pos["lon_deg"], pos.get("alt_m") or old["alt_m"],
+                              old["lat_deg"], old["lon_deg"], old["alt_m"])
+                s.note(f"site: radar data replaces {old.get('source')}; the radar declares itself "
+                       f"{float(np.hypot(e, n)):.1f} m horizontally and {float(u):+.1f} m vertically from the profile")
             s.manifest["site"] = {"name": radar.get("name"), "lat_deg": pos["lat_deg"], "lon_deg": pos["lon_deg"],
                                   "alt_m": pos.get("alt_m"), "alt_datum": pos.get("alt_datum"),
                                   "ground_level_m": radar.get("ground_level_m"),

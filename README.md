@@ -171,6 +171,25 @@ IMG_0042.png,2026-10-28T09:14:30Z
 picture's own UTC time. Undeclared pictures are left out, never assumed to be UTC (`dw check` lists them). RF trace
 exports (CSV or the analyser's own format) get an adapter once a real sample file exists.
 
+## Everyone at the test (parties)
+
+**`dw parties <session>`** lists everyone and everything at the test and where they were: the radar (from its own
+declaration), each drone's take-off (from its log, also the header of an encrypted DJI log), the weather station
+(from its export header). The team adds what no file shows in `<session>/parties.csv` (written empty on first run):
+
+```
+name,kind,lat_deg,lon_deg,height_m,heading_deg,fov_deg,range_m,note
+PR200 + drone pilot,rf,65.176488,26.043188,1.5,,,,beside the drone pilot; position not measured
+EO camera,camera,65.1770,26.0441,3,200,30,800,declared by the team
+```
+
+`kind` is radar, operator, drone_home, pilot, weather, rf, camera, sensor, effector or other. `height_m` is above the
+ground there; left empty, a default is used and the legend says *assumed*. `heading_deg` + `fov_deg` (+ `range_m`)
+draw a coverage wedge, marked DECLARED. A team row with the same name replaces an automatic one; a bad row is left
+out with its reason. In the replay every party is a marker with a ground ring and its height pole, the legend gives
+its distance from the radar and its source, and the on-site wind is an arrow at the weather station (10 m per m/s,
+pointing where the wind blows), every second through the activity.
+
 ## Standard output for evaluators
 
 - **`dw courageous <session>`** (also in `dw run`) writes the radar's output in the **COURAGEOUS data format**
@@ -185,6 +204,9 @@ exports (CSV or the analyser's own format) get an adapter once a real sample fil
 - **`dw site save <session> <name>`** keeps a test site (the radar's declared position and orientation) as a named
   profile in `domeware-data/sites/<name>/site.json`, outside git. `dw site list` shows them. OuluZone is saved as
   `ouluzone`.
+- **`dw site use <session> <name>`** gives a session that has no radar data yet the site of a profile, so terrain,
+  parties, weather and pictures can be replayed at once. The radar data replaces it when it arrives, and the note
+  says how far the radar's own position was from the profile.
 - **`dw simulate <site> <new session> --drones 2 --latency 0.5 --noise 4`** puts a SIMULATED run at that exact place,
   in its real terrain, photo, buildings and forest: the pilot's phase profile at small-drone speeds (P1 two low
   crossings at 5 m, P2 out to 2 km and back, P3 approach to a 200 m stand-off, P4 hover), runs.csv with the phase
