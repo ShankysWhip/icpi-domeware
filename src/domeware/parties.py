@@ -181,7 +181,7 @@ def _ground_heights(s: Session, site: dict, df: pd.DataFrame) -> list[float]:
 
 
 def _log_wind(rec, s: Session, at: list[float], span, stats: dict) -> None:
-    """On-site wind as an arrow, held every second so it stays visible in the trailing 3D view."""
+    """On-site wind as an arrow at the station, one state per measured minute (the viewer holds it until the next)."""
     import rerun as rr
 
     from domeware.replay import _ts
@@ -190,25 +190,19 @@ def _log_wind(rec, s: Session, at: list[float], span, stats: dict) -> None:
     if not p.exists():
         return
     w = pd.read_parquet(p).dropna(subset=["wind_ms", "wind_dir_deg"]).sort_values("t_utc")
-    w["t_utc"] = pd.to_datetime(w["t_utc"], utc=True).dt.as_unit("ns")  # Parquet may hold us; merge_asof needs one unit
-    if span is not None:
+    w["t_utc"] = pd.to_datetime(w["t_utc"], utc=True).dt.as_unit("ns")  # Parquet may hold us
+    if span is not None:  # from the minute before the activity to its end
         w = w[(w["t_utc"] >= span[0] - pd.Timedelta("2min")) & (w["t_utc"] <= span[1])]
-    if len(w) < 1:
+    if not len(w):
         return
-    grid = pd.date_range(w["t_utc"].iloc[0], (span[1] if span else w["t_utc"].iloc[-1]), freq="1s" if span else "10s",
-                         unit="ns")
-    g = pd.merge_asof(pd.DataFrame({"t_utc": grid}), w, on="t_utc", direction="backward", tolerance=pd.Timedelta("2min"))
-    g = g.dropna(subset=["wind_ms", "wind_dir_deg"])
-    if not len(g):
-        return
-    gust = g["gust_ms"] if "gust_ms" in g else pd.Series(np.nan, index=g.index)
+    gust = w["gust_ms"] if "gust_ms" in w else pd.Series(np.nan, index=w.index)
     labels = [f"wind {v:.1f} m/s from {d:.0f} deg" + (f", gust {q:.1f}" if np.isfinite(q) else "")
-              for v, d, q in zip(g["wind_ms"], g["wind_dir_deg"], gust, strict=True)]
-    t = rr.TimeColumn("utc", timestamp=_ts(g["t_utc"]))
-    vec = wind_vectors(g["wind_ms"], g["wind_dir_deg"])
+              for v, d, q in zip(w["wind_ms"], w["wind_dir_deg"], gust, strict=True)]
+    t = rr.TimeColumn("utc", timestamp=_ts(w["t_utc"]))
+    vec = wind_vectors(w["wind_ms"], w["wind_dir_deg"])
     rec.send_columns("world/parties/wind", indexes=[t],
                      columns=[*rr.Arrows3D.columns(vectors=vec).partition([1] * len(vec)),
                               *rr.Arrows3D.columns(labels=labels)])
     rec.log("world/parties/wind", rr.Arrows3D.from_fields(origins=[at], colors=[RGB["weather"]], radii=1.2,
                                                           show_labels=True), static=True)
-    stats["wind_arrow_s"] = len(g)
+    stats["wind_arrow_minutes"] = len(w)

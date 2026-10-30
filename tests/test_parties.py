@@ -81,7 +81,7 @@ def test_parties_and_wind_are_drawn_in_the_replay(tmp_path):
     legend = parties.log_parties(rec, s, SITE, (t[2], t[4]), stats)
     rec.flush()
     assert {p["name"] for p in stats["parties"]} == {"SIM radar", "SIM M400 take-off", "Weather SIMWXT", "EO camera"}
-    assert stats["wind_arrow_s"] == 241  # 09:01:00 .. 09:05:00 every second (2 min before the activity)
+    assert stats["wind_arrow_minutes"] == 5  # 09:00 .. 09:04: from 2 min before the activity to its end
     assert any("EO camera" in line and "camera" in line for line in legend)
 
 
@@ -95,3 +95,15 @@ def test_google_earth_file_shows_the_parties_before_any_drone_data(tmp_path):
     xml.dom.minidom.parseString(k)
     assert "<name>Parties</name>" in k and "SIM M400 take-off" in k and "Weather SIMWXT" in k
     assert k.count("<name>500 m</name>") == 1 and "<gx:Track>" not in k
+
+
+def test_tails_stop_at_a_pause_and_keep_the_last_state():
+    """SIMULATED: a track updating every second, silent for 10 s, then back."""
+    from domeware.replay import _windows
+
+    t = np.array([0, 1, 2, 3, 13, 14], dtype=np.int64) * 1_000_000_000
+    pos = np.arange(6, dtype=np.float32)[:, None].repeat(3, axis=1)
+    keep, segs = _windows(t, pos, window_s=20, hz=5, hold_s=5)
+    assert list(keep) == [0, 1, 2, 3, 4, 5]
+    assert segs[3][:, 0].tolist() == [0, 1, 2, 3]  # whole history before the pause
+    assert segs[5][:, 0].tolist() == [4, 5]  # never drawn across the 10 s silence
