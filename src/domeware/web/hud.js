@@ -194,15 +194,32 @@ function refresh(full) {
 
 // ---------- small widgets ----------
 function seg(options, value, onChange, cls = "") {
-  const el = h("div", { class: `seg ${cls}` });
+  const el = h("div", { class: `seg ${cls}`, role: "radiogroup" });
+  const ind = h("i", { class: "ind", "aria-hidden": "true" });
+  el.append(ind);
   for (const [val, label, extra, disabled] of options) {
-    const b = h("button", { class: val === value ? "on" : "", "data-v": val, disabled: disabled ? true : null }, label, extra ? h("em", {}, extra) : null);
+    const b = h("button", { class: val === value ? "on" : "", "data-v": val, role: "radio", "aria-checked": String(val === value),
+      disabled: disabled ? true : null }, label, extra ? h("em", {}, extra) : null);
     b.addEventListener("click", () => { el.set(val); onChange(val); });
     el.append(b);
   }
-  el.set = (v) => { for (const x of el.children) x.classList.toggle("on", x.dataset.v === v); };
+  el.value = value;
+  el.place = () => {  // the pill follows the chosen option (also after a resize or when a hidden panel shows)
+    const on = el.querySelector("button.on");
+    if (!on || !on.offsetWidth) return;
+    ind.style.width = `${on.offsetWidth}px`;
+    ind.style.transform = `translateX(${on.offsetLeft - 3}px)`;
+    ind.style.opacity = "1";
+  };
+  el.set = (v) => {
+    el.value = v;
+    for (const x of el.querySelectorAll("button")) { const on = x.dataset.v === v; x.classList.toggle("on", on); x.setAttribute("aria-checked", String(on)); }
+    requestAnimationFrame(el.place);
+  };
+  requestAnimationFrame(el.place);
   return el;
 }
+function placeAll() { for (const s of document.querySelectorAll(".seg")) if (s.place) s.place(); Intel.underline(); }
 const Tip = {
   el: null,
   show(html, x, y) {
@@ -405,15 +422,25 @@ const Intel = {
       atmo: h("button", { onclick: () => this.show("atmo") }, "Weather"),
       equip: h("button", { onclick: () => this.show("equip") }, "Equipment", h("em", {}, String(S.data.equipment.length))),
     };
-    tabs.append(this.b.atmo, this.b.equip);
+    tabs.setAttribute("role", "tablist");
+    for (const b of Object.values(this.b)) b.setAttribute("role", "tab");
+    this.line = h("i", { class: "tab-line", "aria-hidden": "true" });
+    tabs.append(this.b.atmo, this.b.equip, this.line);
     this.show("atmo");
   },
   show(which) {
     S.intel = which;
-    for (const [k, b] of Object.entries(this.b)) b.classList.toggle("on", k === which);
+    for (const [k, b] of Object.entries(this.b)) { b.classList.toggle("on", k === which); b.setAttribute("aria-selected", String(k === which)); }
     $("#tabAtmo").hidden = which !== "atmo";
     $("#tabEquip").hidden = which !== "equip";
     if (which === "atmo") Atmo.render(); else Equip.renderScope();
+    requestAnimationFrame(placeAll);
+  },
+  underline() {
+    const on = this.b && this.b[S.intel];
+    if (!on || !this.line) return;
+    this.line.style.width = `${on.offsetWidth * 0.56}px`;
+    this.line.style.transform = `translateX(${on.offsetLeft + on.offsetWidth * 0.22}px)`;
   },
 };
 
@@ -477,7 +504,14 @@ const Atmo = {
     for (const [k, label, color] of WX) {
       if (!wx[k]) continue;
       const c = h("button", { class: `chip ${S.wx[k] ? "on" : ""}`, style: `color:${color}`, title: `Show or hide ${label.toLowerCase()} in the chart` }, h("i"), label);
-      c.addEventListener("click", () => { S.wx[k] = !S.wx[k]; c.classList.toggle("on", S.wx[k]); this.render(); });
+      c.setAttribute("aria-pressed", String(!!S.wx[k]));
+      c.addEventListener("click", () => {
+        S.wx[k] = !S.wx[k];
+        c.classList.toggle("on", S.wx[k]);
+        c.setAttribute("aria-pressed", String(S.wx[k]));
+        c.classList.remove("pop"); void c.offsetWidth; c.classList.add("pop");
+        this.render();
+      });
       chips.append(c);
     }
     this.svg = sv("svg", {});
@@ -701,7 +735,11 @@ const Equip = {
       const main = h("div", { class: "eq-main" }, ico,
         h("div", { style: "min-width:0" }, h("div", { class: "eq-name", title: it.name }, it.name), h("div", { class: "eq-type" }, it.type)),
         h("div", { class: "eq-pos" }, it.id === "radar" ? "ORIGIN" : dist(it.range_m), h("small", {}, it.id === "radar" ? "radar frame" : `${fx(it.bearing_deg, 0)}° · ${compass(it.bearing_deg)}`)));
+      main.tabIndex = 0;
+      main.setAttribute("role", "button");
+      main.setAttribute("aria-expanded", String(S.sel === it.id));
       main.addEventListener("click", () => this.select(it.id));
+      main.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); this.select(it.id); } });
       const row = h("div", { class: `eq-row ${S.sel === it.id ? "sel" : ""}`, "data-id": it.id }, main);
       if (S.sel === it.id) {
         const f = (k, v, wide = false) => h("div", { class: `f ${wide ? "w" : ""}` }, h("span", {}, k), h("b", { html: v }));
@@ -865,7 +903,11 @@ const TL = {
     const k = (anchor - a) / (b - a);
     this.setView([anchor - k * span, anchor - k * span + span]);
   },
-  playIcon() { this.playBtn.innerHTML = S.playing ? PAUSE : PLAY; },
+  playIcon() {
+    this.playBtn.innerHTML = S.playing ? PAUSE : PLAY;
+    this.playBtn.classList.toggle("playing", S.playing);
+    this.playBtn.setAttribute("aria-label", S.playing ? "Pause" : "Play");
+  },
   hover(e) {
     const t = this.timeAt(e);
     this.hv.hidden = false;
@@ -1016,7 +1058,9 @@ function bindHelp() {
   if (!b) return;
   const html = '<b>Keys</b><div class="keys2"><kbd>Space</kbd><span>play / pause</span><kbd>← →</kbd><span>5 s back / forward</span>'
     + '<kbd>Shift</kbd><span>with ← → : 60 s</span><kbd>Home End</kbd><span>start / end of the activity</span>'
-    + '<kbd>Wheel</kbd><span>zoom the timeline</span><kbd>Dbl-click</kbd><span>fit the activity</span></div>';
+    + '<kbd>Wheel</kbd><span>zoom the timeline</span><kbd>Dbl-click</kbd><span>fit the activity</span></div>'
+    + `<div class="prov">Data built ${esc(String(S.data.generated_utc).slice(0, 16).replace("T", " "))} UTC<br>Session ${esc(S.data.session)}`
+    + ` · replay ${esc(String(S.data.recording_id).slice(0, 8))}</div>`;
   b.addEventListener("pointerenter", (e) => Tip.show(html, e.clientX - 260, e.clientY + 200));
   b.addEventListener("pointerleave", () => Tip.hide());
 }
@@ -1067,10 +1111,12 @@ async function init() {
   bindKeys();
   bindHelp();
   window.addEventListener("resize", onResize);
+  window.addEventListener("resize", () => requestAnimationFrame(placeAll));
   new ResizeObserver(onResize).observe($("#side"));
   refresh(true);
   window.__hud.R = { refresh, TL, Clock, Atmo, Equip, Intel };  // for timing checks from the console
   requestAnimationFrame(frame);
+  setTimeout(placeAll, 300);  // fonts settle, then the sliding pills find their places
   const ping = () => fetch("/api/ping", { cache: "no-store" }).catch(() => {});
   ping();
   setInterval(ping, 5000);

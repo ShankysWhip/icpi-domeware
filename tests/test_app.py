@@ -39,3 +39,34 @@ def test_window_builds_and_side_panel_toggles(tmp_path):
         assert not w.side.winfo_ismapped()
     finally:
         root.destroy()
+
+
+def test_new_sessions_show_up_with_f5(tmp_path):
+    tk = pytest.importorskip("tkinter")
+    try:
+        root = tk.Tk()
+    except tk.TclError:
+        pytest.skip("no display")
+    try:
+        w = app.App(root, base=tmp_path)
+        assert w.session.get() == ""
+        (tmp_path / "2026-11-01_new").mkdir()
+        (tmp_path / "2026-11-01_new" / "manifest.json").write_text("{}")
+        w.refresh_sessions()
+        assert w.session.get() == "2026-11-01_new" and "1 sessions" in w.status.get()
+    finally:
+        root.destroy()
+
+
+def test_hud_script_parses():
+    """The HUD script has no syntax error (node --check), when node is on this laptop."""
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    node = shutil.which("node") or r"C:\Program Files\nodejs\node.exe"
+    if not Path(node).exists():
+        pytest.skip("node not installed")
+    js = Path(app.__file__).with_name("web") / "hud.js"
+    r = subprocess.run([node, "--check", str(js)], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr

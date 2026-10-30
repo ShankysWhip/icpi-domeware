@@ -38,6 +38,7 @@ GROUPS = [
 MORE = [row for _, rows in GROUPS for row in rows]
 BG, CARD, LINE, TEXT, MUTED, DIM = "#eef1f5", "#ffffff", "#e2e7ee", "#16202c", "#5d6a7a", "#97a2b0"
 ACCENT, ACCENT_DARK, HOVER, GREEN, RED = "#0a8db6", "#0b6f91", "#f3f7fa", "#138a52", "#cf3a57"
+PRESSED, ACCENT_PRESSED = "#e6edf3", "#095a76"
 FONT, BOLD = ("Segoe UI", 10), ("Segoe UI Semibold", 10)
 
 
@@ -89,15 +90,27 @@ def _open_file(path: Path) -> None:
         os.startfile(path) if sys.platform == "win32" else subprocess.Popen(["xdg-open", str(path)])  # noqa: S606
 
 
-def _hoverable(widgets, normal: str, hover: str, on_click) -> None:
-    """A frame and its labels act as one button: one hover colour, one click."""
+def _hoverable(widgets, normal: str, hover: str, on_click, pressed: str | None = None) -> None:
+    """A frame and its labels act as one button: hover colour, a darker colour while pressed, and the action runs on
+    release, only if the pointer is still on the button (as real buttons do: slide off to cancel)."""
+    pressed = pressed or hover
+
     def paint(c):
         for w in widgets:
             w.configure(bg=c)
+
+    def release(e):
+        if e.widget.winfo_containing(e.x_root, e.y_root) in widgets:
+            paint(hover)
+            on_click()
+        else:
+            paint(normal)
+
     for w in widgets:
         w.bind("<Enter>", lambda _e: paint(hover))
         w.bind("<Leave>", lambda _e: paint(normal))
-        w.bind("<Button-1>", lambda _e: on_click())
+        w.bind("<ButtonPress-1>", lambda _e: paint(pressed))
+        w.bind("<ButtonRelease-1>", release)
         w.configure(cursor="hand2")
 
 
@@ -133,7 +146,7 @@ class App:
         self.more_btn = tk.Label(head, text="All commands  ›", bg=CARD, fg=ACCENT_DARK, font=BOLD, padx=12, pady=6,
                                  highlightthickness=1, highlightbackground=LINE)
         self.more_btn.pack(side="right")
-        _hoverable([self.more_btn], CARD, HOVER, self.toggle)
+        _hoverable([self.more_btn], CARD, HOVER, self.toggle, PRESSED)
         # session
         box = tk.Frame(main, bg=CARD, highlightthickness=1, highlightbackground=LINE, padx=14, pady=12)
         box.grid(row=1, column=0, sticky="ew", pady=(16, 12))
@@ -164,6 +177,11 @@ class App:
         self.details_btn.pack(side="right")
         self.details_btn.bind("<Button-1>", lambda _e: self.toggle_details())
         self.bar = ttk.Progressbar(main, mode="indeterminate", style="Busy.Horizontal.TProgressbar")  # shown only while working
+        tk.Label(main, text="Enter  start replay      F5  refresh the list      Esc  close the panel", bg=BG, fg=DIM,
+                 font=("Segoe UI", 8)).grid(row=6, column=0, sticky="e", pady=(10, 0))
+        root.bind("<Return>", lambda _e: self.run("start"))
+        root.bind("<F5>", lambda _e: self.refresh_sessions())
+        root.bind("<Escape>", lambda _e: self.toggle() if self.side_open else None)
         self.log = tk.Text(main, height=8, bg=CARD, fg=TEXT, relief="flat", font=("Cascadia Mono", 9), wrap="word",
                            highlightthickness=1, highlightbackground=LINE, padx=8, pady=6)
         self.log_shown = False
@@ -192,7 +210,7 @@ class App:
         t.grid(row=0, column=1, sticky="w")
         d = tk.Label(f, text=desc, bg=bg, fg=sub, font=("Segoe UI", 9), anchor="w", justify="left", wraplength=220)
         d.grid(row=1, column=1, sticky="w")
-        _hoverable([f, icon, t, d], bg, hover, lambda: self.run(job))
+        _hoverable([f, icon, t, d], bg, hover, lambda: self.run(job), ACCENT_PRESSED if primary else PRESSED)
         self.names[job] = title
 
     def _row(self, parent, title: str, job: str, desc: str) -> None:
@@ -205,8 +223,18 @@ class App:
         arrow = tk.Label(f, text="›", bg=CARD, fg=DIM, font=("Segoe UI", 14))
         arrow.grid(row=0, column=1, rowspan=2, sticky="e")
         f.columnconfigure(0, weight=1)
-        _hoverable([f, t, d, arrow], CARD, HOVER, lambda: self.run(job))
+        _hoverable([f, t, d, arrow], CARD, HOVER, lambda: self.run(job), PRESSED)
         self.names[job] = title
+
+    def refresh_sessions(self) -> None:
+        """Look for new sessions (e.g. one made in a terminal) without restarting the window."""
+        names = sessions(self.base)
+        self.pick.configure(values=names)
+        if self.session.get() not in names:
+            self.session.set(names[0] if names else "")
+        self.show_summary()
+        self.status.set(f"{len(names)} sessions found.")
+        self.status_lbl.configure(fg=MUTED)
 
     def show_summary(self) -> None:
         name = self.session.get()
@@ -243,6 +271,7 @@ class App:
         self.status_lbl.configure(fg=MUTED)
         self.bar.grid(row=4, column=0, sticky="ew", pady=(6, 0))
         self.bar.start(12)
+        self.root.configure(cursor="watch")
         self.write(f"\n> {title}  ({session.name})\n")
 
         def work():
@@ -275,6 +304,7 @@ class App:
         self.busy = False
         self.bar.stop()
         self.bar.grid_remove()
+        self.root.configure(cursor="")
         self.status.set(f"✓  Done: {title}" if ok else f"✗  {title} failed: the details are open below.")
         self.status_lbl.configure(fg=GREEN if ok else RED)
         if not ok:
