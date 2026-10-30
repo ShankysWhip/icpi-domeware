@@ -14,7 +14,7 @@ def test_every_side_button_is_a_dw_command(job):
 
 def test_main_buttons_build_the_replay_first_when_missing(tmp_path):
     cmds = app.command("start", tmp_path)
-    assert cmds[0][-2:] == ["replay", str(tmp_path)] and cmds[-1][-3:] == ["view", str(tmp_path), "--start"]
+    assert cmds[0][-2:] == ["replay", str(tmp_path)] and cmds[-1][-3:] == ["hud", str(tmp_path), "--play"]
     (tmp_path / "views").mkdir()
     (tmp_path / "views" / "replay.rrd").write_bytes(b"")
     assert len(app.command("start", tmp_path)) == 1

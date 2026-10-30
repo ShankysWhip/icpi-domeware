@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>domeware HUD</title>
+<link rel="stylesheet" href="/app/hud.css">
+</head>
+<body>
+<div id="app">
+  <header id="top">
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 18a9 9 0 0 1 18 0"/><path d="M7 18a5 5 0 0 1 10 0"/><circle cx="12" cy="18" r="1.4"/><path d="M12 18 18.5 7.5"/></svg>
+      <b>DOMEWARE</b><span>REPLAY HUD</span>
+    </div>
+    <div class="crumbs"><span id="sessionName">—</span><i>/</i><span id="siteName">—</span><em id="simTag" hidden>SIMULATED</em></div>
+    <div id="status" class="status"></div>
+    <div class="keys">SPACE <i>play</i> · ←/→ <i>5 s</i> · SHIFT <i>60 s</i> · HOME/END</div>
+  </header>
+
+  <main id="stage">
+    <div id="viewer"></div>
+    <div class="frame" aria-hidden="true"><i class="c tl"></i><i class="c tr"></i><i class="c bl"></i><i class="c br"></i></div>
+    <div class="stage-label"><i></i>3D SITE · <span id="stageSite">—</span></div>
+    <div id="loading">
+      <div class="ring"><i></i></div>
+      <div class="msg">INITIALISING 3D ENGINE</div>
+      <div class="bar"><i></i></div>
+      <div class="sub" id="loadSub">loading the viewer</div>
+    </div>
+  </main>
+
+  <aside id="side">
+    <section class="card" id="clock"></section>
+    <section class="card" id="intel">
+      <div class="tabs" id="intelTabs"></div>
+      <div class="tab-body" id="tabAtmo"></div>
+      <div class="tab-body" id="tabEquip" hidden></div>
+    </section>
+  </aside>
+
+  <footer id="timeline" class="card"></footer>
+</div>
+
+<div id="tip" class="tip" hidden></div>
+<div id="lightbox" hidden>
+  <div class="lb-frame">
+    <img id="lbImg" alt="">
+    <div class="lb-bar">
+      <button id="lbPrev" title="Previous">‹</button>
+      <div class="lb-cap"><b id="lbTime">—</b><span id="lbName"></span></div>
+      <button id="lbJump">JUMP TO THIS MOMENT</button>
+      <button id="lbNext" title="Next">›</button>
+      <button id="lbClose" title="Close (Esc)">✕</button>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="/app/hud.js"></script>
+</body>
+</html>

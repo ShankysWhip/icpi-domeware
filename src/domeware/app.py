@@ -15,8 +15,8 @@ from tkinter import ttk
 from domeware.overview import DEFAULT_ROOT
 
 # (button text, dw command, what it does) - the four everyday jobs
-MAIN = [("Start replay", "start", "Opens the 3D replay and plays the test from its start"),
-        ("Open replay", "view", "Opens the 3D replay, paused"),
+MAIN = [("Start replay", "start", "Opens the replay HUD and plays the test from its start"),
+        ("Classic 3D", "view", "Opens the replay in the Rerun viewer with all its charts"),
         ("Google Earth", "earth", "Writes the Google Earth file and opens it"),
         ("Report", "open-report", "Writes the run report and opens it")]
 # side panel: the commands people need now and then, most used first
@@ -45,7 +45,7 @@ def command(job: str, session: Path) -> list[list[str]]:
     dw = [sys.executable, "-m", "domeware.cli"]
     s = str(session)
     replay_first = [] if (session / "views" / "replay.rrd").exists() else [[*dw, "replay", s]]
-    return {"start": [*replay_first, [*dw, "view", s, "--start"]],
+    return {"start": [*replay_first, [*dw, "hud", s, "--play"]],
             "view": [*replay_first, [*dw, "view", s]],
             "earth": [[*dw, "kml", s]],
             "open-report": [[*dw, "report", s]]}.get(job, [[*dw, job, s]])
@@ -150,7 +150,18 @@ class App:
 
         def work():
             ok = True
-            for cmd in command(job, session):
+            cmds = command(job, session)
+            if job == "start":  # the HUD keeps serving while its window is open: start it and let it run
+                for cmd in cmds[:-1]:
+                    ok = ok and subprocess.run(cmd, capture_output=True).returncode == 0
+                if ok:
+                    subprocess.Popen(cmds[-1], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                msg = "HUD opening in its own window." if ok else "Rebuilding the replay failed."
+                self.root.after(0, self.write, msg + "\n")
+                self.root.after(0, self.done, ok)
+                return
+            for cmd in cmds:
                 p = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
                 out = "\n".join(line for line in (p.stdout + p.stderr).splitlines() if " WARN " not in line)
                 self.root.after(0, self.write, out[-4000:] + "\n")

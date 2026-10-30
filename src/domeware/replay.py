@@ -363,6 +363,30 @@ def _fmt(v, spec: str, unit: str) -> str:
     return "-" if v is None or not np.isfinite(v) else f"{v:{spec}} {unit}"
 
 
+def natural(name: str) -> list:
+    """D2 before D10."""
+    return [int(p) if p.isdigit() else p for p in re.split(r"(\d+)", name)]
+
+
+def drone_frames(times: pd.Series, truths: dict, errs: dict) -> dict[str, pd.DataFrame]:
+    """For each drone (in natural order), at the given instants: e/n, height above take-off, speed, and the radar's
+    horizontal error when a radar track had it (NaN when not). Shared by the Now readout and the HUD."""
+    grid = pd.DataFrame({"t_utc": pd.to_datetime(times, utc=True).dt.as_unit("ns")})
+    out = {}
+    for name in sorted(truths, key=natural):
+        d = truths[name]
+        cols = ["t_utc", "e_m", "n_m", *(["h_rel_takeoff_m"] if "h_rel_takeoff_m" in d else [])]
+        k = d[cols].copy()
+        k["t_utc"] = pd.to_datetime(k["t_utc"], utc=True).dt.as_unit("ns")
+        k = pd.merge_asof(grid, k.sort_values("t_utc"), on="t_utc", direction="nearest", tolerance=pd.Timedelta("1s"))
+        k["speed"] = np.hypot(k["e_m"].diff(), k["n_m"].diff()) / k["t_utc"].diff().dt.total_seconds()
+        if name in errs:
+            k = pd.merge_asof(k, errs[name].sort_values("t_utc"), on="t_utc", direction="nearest",
+                              tolerance=pd.Timedelta("2s"))
+        out[name] = k
+    return out
+
+
 def _log_now(rec, s: Session, span, truths: dict, errs: dict, has_radar: bool) -> bool:
     """A live readout beside the 3D view: the weather, and for each drone its range, height, speed and whether the
     radar had it at that moment. One page per second (per minute with weather only)."""
@@ -377,17 +401,7 @@ def _log_now(rec, s: Session, span, truths: dict, errs: dict, has_radar: bool) -
     if w is not None:
         w["t_utc"] = pd.to_datetime(w["t_utc"], utc=True).dt.as_unit("ns")
         g = pd.merge_asof(g, w.sort_values("t_utc"), on="t_utc", direction="backward", tolerance=pd.Timedelta("2min"))
-    drones = {}
-    for name, d in sorted(truths.items(), key=lambda kv: [int(p) if p.isdigit() else p for p in re.split(r"(\d+)", kv[0])]):
-        cols = ["t_utc", "e_m", "n_m", *(["h_rel_takeoff_m"] if "h_rel_takeoff_m" in d else [])]
-        k = d[cols].copy()
-        k["t_utc"] = pd.to_datetime(k["t_utc"], utc=True).dt.as_unit("ns")
-        k = pd.merge_asof(g[["t_utc"]], k.sort_values("t_utc"), on="t_utc", direction="nearest", tolerance=pd.Timedelta("1s"))
-        k["speed"] = np.hypot(k["e_m"].diff(), k["n_m"].diff()) / k["t_utc"].diff().dt.total_seconds()
-        if name in errs:
-            k = pd.merge_asof(k, errs[name].sort_values("t_utc"), on="t_utc", direction="nearest",
-                              tolerance=pd.Timedelta("2s"))
-        drones[name] = k
+    drones = drone_frames(g["t_utc"], truths, errs)
     texts = []
     for i, row in enumerate(g.itertuples()):
         lines = [f"### {row.t_utc:%H:%M:%S} UTC", ""]
@@ -706,15 +720,24 @@ def build(s: Session) -> dict:
     ]
     right = [rrb.Tabs(*g) for g in groups if g]
     bp = rrb.Blueprint(
-        rrb.Horizontal(rrb.Vertical(*left, row_shares=[3, 2][:len(left)]),
+        rrb.Horizontal(rrb.Vertical(*left, row_shares=[4, 1][:len(left)]),
                        *([rrb.Vertical(*right)] if right else []), column_shares=[3, 1][:1 + bool(right)]),
         rrb.TimePanel(timeline="utc", state="collapsed", loop_mode="selection", play_state="paused",
                       time_selection=rrb.components.AbsoluteTimeRange(min=span[0].value, max=span[1].value) if span else None),
         collapse_panels=True)
-    rec.send_blueprint(bp)
+    # Blueprints are separate files (classic: replay.rbl, HUD: replay_hud.rbl), never inside the .rrd: a blueprint
+    # stored in the recording would race the one the HUD opens.
+    hud_bp = rrb.Blueprint(rrb.Tabs(*spatial) if len(spatial) > 1 else spatial[0], rrb.TopPanel(state="hidden"), rrb.BlueprintPanel(state="hidden"),
+                           rrb.SelectionPanel(state="hidden"), rrb.TimePanel(timeline="utc", state="hidden", play_state="paused"),
+                           collapse_panels=True)
     rec.flush()
     rec.disconnect()
     bp.save("domeware-replay", str(s.views / "replay.rbl"))
+    hud_bp.save("domeware-replay", str(s.views / "replay_hud.rbl"))
+    from domeware.hud import export as hud_export
+
+    stats["hud"] = hud_export(s, site=site, span=span, truths=truths, errs=errs, tracks=tracks_all, owner=owner,
+                              colours=drone_rgb, events=events)
     stats["rrd_mb"] = round(rrd.stat().st_size / 1e6, 1)
     stats["quicklooks"] = quicklooks(s, site, focus_ids, owner)
     (s.views / "replay_stats.json").write_text(json.dumps(stats, indent=2, default=str), encoding="utf-8")

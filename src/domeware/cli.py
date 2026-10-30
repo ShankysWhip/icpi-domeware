@@ -16,6 +16,7 @@
   dw report SESSION           views/report.md
   dw view SESSION             open the replay (loopback only); --start plays the test from its start
   dw app                      the same in one window: pick a session, press a button
+  dw hud SESSION              the replay HUD: 3D plus clock, weather, equipment and timeline (--play starts it)
   dw check SESSION            in the field: is the data complete? (offline, seconds)
   dw note SESSION "text"      a team note on the UTC clock (--at 09:14:30); shows in the replay and report
   dw seal SESSION             record the hash of every file the team brought (seal.json)
@@ -71,6 +72,11 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("list", help="all sessions in one table").add_argument("root", type=Path, nargs="?")
     sub.add_parser("doctor", help="check this laptop")
     sub.add_parser("app", help="one window with big buttons")
+    p = sub.add_parser("hud", help="the replay HUD in an app window")
+    p.add_argument("session", type=Path)
+    p.add_argument("--play", action="store_true", help="start playing the activity")
+    p.add_argument("--no-open", action="store_true", help="serve only, open no window")
+    p.add_argument("--port", type=int, default=0)
     p = sub.add_parser("view", help="open the replay")
     p.add_argument("session", type=Path)
     p.add_argument("--start", action="store_true", help="play the test from its start")
@@ -250,6 +256,10 @@ def main(argv: list[str] | None = None) -> int:
         from domeware import report
 
         report.build(s)
+    if a.cmd == "hud":
+        from domeware.hud import serve
+
+        return serve(s, port=a.port, open_window=not a.no_open, play=a.play)
     if a.cmd == "view":
         from domeware.viewer import open_replay
 

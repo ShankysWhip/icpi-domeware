@@ -39,8 +39,9 @@ def activity(s: Session) -> tuple[pd.Timestamp, pd.Timestamp] | None:
 
 def _launch(rrd: Path, port: int, headless: bool = False, size: str | None = None) -> subprocess.Popen:
     subprocess.run([str(_exe()), "analytics", "disable"], capture_output=True)
+    rbl = rrd.with_name("replay.rbl")  # the layout is a file beside the replay, not inside it
     args = [str(_exe()), "--bind", "127.0.0.1", "--port", str(port), *(["--headless"] if headless else []),
-            *(["--window-size", size] if size else []), str(rrd)]
+            *(["--window-size", size] if size else []), str(rrd), *([str(rbl)] if rbl.exists() else [])]
     return subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 

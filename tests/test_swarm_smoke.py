@@ -81,6 +81,9 @@ def test_whole_chain_runs_for_a_swarm(swarm):
     assert card["validity"]["valid"] and card["items"]["B7"]["value"] == "0.4"
     stats = replay.build(s)
     assert len(stats["track_owner"]) == 4 and (s.views / "replay.rrd").exists()
+    hud = json.loads((s.views / "hud" / "data.json").read_text(encoding="utf-8"))  # the HUD gets every drone
+    assert len(hud["drones"]) == 5 and sum(1 for d in hud["drones"] if d["tracked"]) == 4
+    assert (s.views / "replay_hud.rbl").exists() and (s.views / "replay.rbl").exists()
     assert performance.build(s) is not None and performance.timeline(s) is not None
     assert kml.build(s).count("<gx:Track>") >= 9
     text = report.build(s)

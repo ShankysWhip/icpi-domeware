@@ -92,6 +92,7 @@ def doctor() -> int:
           "update GPS_UTC_LEAP_S in adapters/truth.py from IERS Bulletin C")
     exe = Path(sys.executable).with_name("rerun.exe" if sys.platform == "win32" else "rerun")
     check(exe.exists(), "Rerun viewer", "run: uv sync (rerun-sdk ships the viewer)")
+    check((WEB_VIEWER / "re_viewer_bg.wasm").exists(), "3D web viewer for the HUD (dw hud)", "run: uv run dw setup")
     import shutil
 
     print(f"  {'OK ' if shutil.which('ffmpeg') else '-- '}  ffmpeg on PATH (optional: only for H.264/H.265 video in the replay viewer)")
@@ -114,7 +115,12 @@ VENDOR_FILES = [
     ("courageous/courageous.schema.json",
      "https://raw.githubusercontent.com/COURAGEOUS-isf/format/main/courageous.schema.json",
      "8d897914a23059857f08afac83fb53e167ab52e6bb4c9eaaba475ed5c05d4228"),
+    # Rerun web viewer for the HUD (npm @rerun-io/web-viewer, MIT/Apache-2.0); its version must match rerun-sdk
+    ("rerun-web-viewer-0.40.0/rerun-io-web-viewer-0.40.0.tgz",
+     "https://registry.npmjs.org/@rerun-io/web-viewer/-/web-viewer-0.40.0.tgz",
+     "157ffdf4cb381ecd6d4d61ef178945bff2e73b7027787bcacc534df24a676b53"),
 ]
+WEB_VIEWER = VENDOR / "rerun-web-viewer-0.40.0" / "package"  # unpacked by dw setup; used by dw hud
 
 
 def setup(vendor: Path = VENDOR) -> int:
@@ -147,6 +153,13 @@ def setup(vendor: Path = VENDOR) -> int:
         dst.parent.mkdir(parents=True, exist_ok=True)
         dst.write_bytes(r.content)
         print(f"  OK   {rel} downloaded ({len(r.content) / 1e6:.1f} MB)")
+    tgz = vendor / "rerun-web-viewer-0.40.0" / "rerun-io-web-viewer-0.40.0.tgz"
+    if tgz.exists() and not (tgz.parent / "package" / "re_viewer_bg.wasm").exists():
+        import tarfile
+
+        with tarfile.open(tgz) as tf:
+            tf.extractall(tgz.parent, filter="data")  # "data": no links or paths outside the folder
+        print("  OK   3D web viewer unpacked")
     if vendor == VENDOR:
         return doctor() or (1 if bad else 0)
     return 1 if bad else 0

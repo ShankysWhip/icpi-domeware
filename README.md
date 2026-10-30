@@ -26,23 +26,41 @@ and `dw info`. Adding files later: `dw ingest` again, then `dw convert` and `dw 
 uv run dw app
 ```
 
-One window: pick a session, press **Start replay** (plays the test from its start, looping), **Open replay**,
-**Google Earth** or **Report**. **Commands** opens a side list of the other jobs (check data, rebuild, convert,
-equipment, radar vs drones, scorecard values, timeline CSV, COURAGEOUS, seal, info). Every button runs the same
-`dw` command as below. From the command line: `uv run dw view <session folder>` (add `--start` to play).
+One window: pick a session and press **Start replay**: the replay HUD opens in its own app window (Microsoft Edge
+`--app`) and plays the test from its start, looping. **Classic 3D** opens the same replay in the Rerun viewer with
+all its charts; **Google Earth** and **Report** open those files. **Commands** opens a side list of the other jobs
+(check data, rebuild, convert, equipment, radar vs drones, scorecard values, timeline CSV, COURAGEOUS, seal, info).
+Every button runs the same `dw` command as the command line: `uv run dw hud <session> --play`, `uv run dw view <session>`.
 
-In the replay: the 3D view opens on where things happened; **Now** (top right) reads out the weather and, for each
-drone, its range, height, speed and whether the radar had it at that moment; charts sit in tabs by subject; the thin
-bar at the bottom plays the activity in a loop. Trees and the line-of-sight layer are in the file but off by default
-(switch them on in the left panel).
+### The replay HUD (`dw hud`)
+
+The 3D scene (the Rerun web viewer) with domeware's own panels around it, all on one clock:
+
+- **Mission clock:** the time (UTC or local), T+ from the start of the activity, the phase, and a readout to choose:
+  *Overview* (wind, gust, temperature, drones airborne, radar hold, events), *Drones* (range, height, speed, radar
+  tracked or lost for each), *Radar* (tracks alive, share of airborne time tracked per drone), *Log* (latest events).
+- **Atmosphere:** wind dial and numbers; wind, gust, direction, temperature, humidity and pressure in one chart,
+  each series switched on or off; click the chart to jump there.
+- **Equipment:** a choice list (all, sensors, weather, take-offs, crew), a radar-centred scope (site or whole area,
+  with the drones moving on it) and the list itself; pick an item, or click it in 3D, to see its position, height
+  and where the number came from.
+- **Timeline:** play, ±10 s, start/end, speed ½× to 30×, loop; lanes for the activity and its phases, each drone
+  (bright where the radar tracked it, hatched red where it did not), radar tracks alive, events, screenshots as
+  thumbnails (hover for a preview, click for full size) and wind. Wheel zooms, double-click fits the activity.
+- Keys: Space play/pause, ←/→ 5 s, Shift ←/→ 60 s, Home/End.
+
+It is served from this computer only (127.0.0.1) and stops by itself about 45 s after its window is closed. The data
+is written by `dw replay` (`views/hud/`); the web viewer comes from `dw setup` (hash-pinned in `domeware-vendor`,
+never in git); nothing is fetched from the internet while it runs.
 
 ## Open the replay (manual)
 
-Open it yourself, in your own PowerShell. Bind to 127.0.0.1 so Windows doesn't create firewall rules:
+Open it yourself, in your own PowerShell. Bind to 127.0.0.1 so Windows doesn't create firewall rules; the layout is a
+file beside the replay:
 
 ```
 uv run rerun analytics disable
-uv run rerun --bind 127.0.0.1 --port auto <session>\views\replay.rrd
+uv run rerun --bind 127.0.0.1 --port auto <session>\views\replay.rrd <session>\views\replay.rbl
 ```
 
 If a Windows Firewall prompt appears anyway, press **Cancel**.
