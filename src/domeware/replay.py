@@ -428,6 +428,16 @@ def build(s: Session) -> dict:
                     rec.send_columns(f"weather/{col}", indexes=[t], columns=rr.Scalars.columns(scalars=v))
                     weather_cols.append(col)
             stats["weather_lanes"] = weather_cols
+    onsite = s.streams / "weather" / "onsite_vaisala.parquet"
+    onsite_cols = []
+    if onsite.exists():
+        w = pd.read_parquet(onsite)
+        t = rr.TimeColumn("utc", timestamp=_ts(w["t_utc"]))
+        for col in ("wind_ms", "gust_ms", "wind_dir_deg", "temp_c", "pressure_hpa", "rh_pct", "precip_mmh"):
+            if col in w and w[col].notna().any():
+                rec.send_columns(f"onsite/{col}", indexes=[t], columns=rr.Scalars.columns(scalars=w[col].to_numpy(np.float64)))
+                onsite_cols.append(col)
+        stats["onsite_weather_lanes"] = onsite_cols
 
     de = s.streams / "events" / "drone_events.parquet"
     if de.exists():  # drone side: take-offs, landings, modes, failsafes
@@ -467,6 +477,8 @@ def build(s: Session) -> dict:
                          *[rrb.Spatial2DView(name=f"Screens: {p.split('/', 1)[1]}", origin=f"/{p}") for p in picture_paths]),
             rrb.Vertical(rrb.TimeSeriesView(name="Range from radar (m)", origin="/plots/range_m"),
                          rrb.TimeSeriesView(name="Height above radar ground (m)", origin="/plots/height_above_radar_ground_m"),
+                         *([rrb.TimeSeriesView(name="On-site wind and gust (m/s, Vaisala)", origin="/onsite",
+                                               contents=["/onsite/wind_ms", "/onsite/gust_ms"])] if onsite_cols else []),
                          *([rrb.TimeSeriesView(name="Wind (m/s, FMI nearest)", origin="/weather",
                                                contents=["/weather/wind_ms", "/weather/gust_ms"]),
                             rrb.TimeSeriesView(name="Temp (C) / visibility (m), FMI", origin="/weather",

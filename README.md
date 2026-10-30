@@ -148,6 +148,14 @@ All three run inside `dw run`.
   never deletes at the destination, merges notes, and checks the copy against the seal. Encrypt the copy for
   transport (e.g. age).
 
+## On-site weather (Vaisala)
+
+A Vaisala WXT536 export (Excel, as from VTT OuluZone) is recognised by its name (`*WXT*.xlsx`) and becomes
+`streams/weather/onsite_vaisala.parquet`: 1-minute wind, gust, direction, temperature, pressure, humidity and rain,
+in the time zone stated in the file. Values a spreadsheet turned into dates (8.10 -> 8 October) are repaired and
+counted, and checked by physics: humidity computed from temperature and dew point must match the measured humidity.
+On-site weather shows in the replay, the timeline and the report next to FMI.
+
 ## Screenshots and the RF spectrum
 
 Pictures (`.png` / `.jpg`) from a spectrum analyser SD card (e.g. R&S PR200), the radar screen or a phone go into

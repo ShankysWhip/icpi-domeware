@@ -142,6 +142,13 @@ def timeline(s: Session, gate_m: float = 50.0) -> pd.DataFrame | None:
         if keep:
             out = pd.merge_asof(out, w[["t_utc", *keep]].sort_values("t_utc"), on="t_utc", direction="backward",
                                 tolerance=pd.Timedelta("20min")).rename(columns={c: f"weather.{c}" for c in keep})
+    on = s.streams / "weather" / "onsite_vaisala.parquet"
+    if on.exists():
+        w = pd.read_parquet(on)
+        w["t_utc"] = pd.to_datetime(w["t_utc"], utc=True).dt.as_unit("ns")
+        keep = [c for c in ("wind_ms", "gust_ms", "wind_dir_deg", "temp_c", "pressure_hpa", "rh_pct", "precip_mmh") if c in w]
+        out = pd.merge_asof(out, w[["t_utc", *keep]].sort_values("t_utc"), on="t_utc", direction="backward",
+                            tolerance=pd.Timedelta("2min")).rename(columns={c: f"onsite.{c}" for c in keep})
     de = s.streams / "events" / "drone_events.parquet"
     if de.exists():
         ev = pd.read_parquet(de)

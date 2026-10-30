@@ -48,8 +48,8 @@ def detect_role(path: Path) -> str:
         return "robin_cfg"
     if b"ROBIN RADAR SYSTEMS" in head and (".plots" in name or name.endswith(".img")):
         return "robin_raw"
-    if name.startswith("flightrecord") and name.endswith(".txt") and len(head) > 11 and head[10] >= 13:
-        return "dji_flightrecord_encrypted"
+    if "flightrecord" in name and name.endswith(".txt") and len(head) > 11 and head[10] >= 13:
+        return "dji_flightrecord_encrypted"  # DJI Pilot names it DJIFlightRecord_<date>_[<time>].txt
     if name.endswith(".csv") and (b"OSD.latitude" in head or b"OSD.longitude" in head):
         return "dji_csv"
     if name.endswith(".srt") and (b"latitude" in head.lower() or b"longtitude" in head.lower()):
@@ -62,6 +62,8 @@ def detect_role(path: Path) -> str:
         return "mavlink_tlog"
     if name.endswith(".pos"):
         return "rtklib_pos"
+    if name.endswith((".xlsx", ".xls")) and "wxt" in name:
+        return "vaisala_wxt"
     if name.endswith((".mp4", ".mov")):
         return "video"
     if name.endswith((".png", ".jpg", ".jpeg", ".bmp")):
@@ -103,7 +105,7 @@ class Session:
         for src in sources:
             src = Path(src)
             files = [p for p in src.rglob("*") if p.is_file()] if src.is_dir() else [src]
-            base = src if src.is_dir() else src.parent
+            base = src.parent  # a folder keeps its own name inside raw/<role>/
             for f in sorted(files):
                 digest = sha256_file(f)
                 if digest in known:

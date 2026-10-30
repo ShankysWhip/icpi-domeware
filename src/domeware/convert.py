@@ -194,6 +194,29 @@ def convert_planned(s: Session) -> None:
         s.note(f"planned: {f.name}: {meta['drones']} drones, {meta['duration_s']:.0f} s show")
 
 
+def convert_vaisala(s: Session) -> None:
+    from domeware.adapters.vaisala import read_wxt_excel
+
+    files = s.raw_files("vaisala_wxt")
+    frames = []
+    for f in files:
+        try:
+            df, meta = read_wxt_excel(f)
+        except Exception as e:  # one bad export must not stop the others; the reason is recorded
+            s.note(f"vaisala: {f.name}: NOT converted: {e}")
+            continue
+        df["source"] = f.name
+        frames.append(df)
+        s.manifest["streams"][f"weather/onsite_vaisala/{f.stem}"] = meta
+        s.note(f"vaisala: {f.name}: {meta['rows']} minutes, {meta['cells_repaired_from_spreadsheet_dates']} cells repaired "
+               f"from spreadsheet dates; RH check max {meta.get('check_rh_max_diff_pct')} %")
+    if frames:
+        out = s.streams / "weather"
+        out.mkdir(parents=True, exist_ok=True)
+        w = pd.concat(frames, ignore_index=True).sort_values("t_utc").drop_duplicates("t_utc")
+        w.to_parquet(out / "onsite_vaisala.parquet", index=False)
+
+
 def report_unhandled(s: Session) -> None:
     hints = {
         "dji_flightrecord_encrypted": "DJI log v13+ is encrypted. Decode it with a DJI developer API key "
@@ -210,6 +233,7 @@ def report_unhandled(s: Session) -> None:
 def run(s: Session) -> None:
     convert_robin(s)
     convert_dji_csv(s)
+    convert_vaisala(s)
     convert_truth(s)
     convert_planned(s)
     report_unhandled(s)

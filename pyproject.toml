@@ -23,6 +23,7 @@ dependencies = [
     "mapbox-earcut>=2.1.0",
     "stonesoup>=1.9",
     "jsonschema>=4.20",
+    "openpyxl>=3.1.5",
 ]
 
 [project.scripts]
