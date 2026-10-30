@@ -39,7 +39,8 @@ def detect_role(path: Path) -> str:
     """Decide what a file is from its name and first bytes. Unknown files are still kept."""
     name = path.name.lower()
     try:
-        head = path.read_bytes()[:4096] if not name.endswith(".gz") else gzip.open(path).read(4096)
+        with (gzip.open(path) if name.endswith(".gz") else open(path, "rb")) as fh:
+            head = fh.read(4096)  # only the head: a radar image can be tens of GB
     except OSError:
         head = b""
     if name.endswith(".xml") and b"<Robin" in head:
