@@ -4,7 +4,7 @@ Drones are drawn in the replay's colours; a radar track that was a drone is draw
 tracks in grey. Heights: drones above their take-off ground (clamped to the terrain Google Earth shows), radar tracks
 at the altitude the radar reports. Thinned to one point per second to keep the file small.
 Each drone's whole path is also drawn with a see-through curtain down to the ground, so its height reads at a glance;
-everyone at the test (dw parties) is a named pin, and the radar has range rings.
+all equipment (dw equipment) is a named pin, and the radar has range rings.
 """
 
 from __future__ import annotations
@@ -49,8 +49,8 @@ def _curtain(name: str, d: pd.DataFrame, rgb) -> str:
             f"</LineString></Placemark>")
 
 
-def _parties(s: Session) -> str:
-    from domeware.parties import load
+def _equipment(s: Session) -> str:
+    from domeware.equipment import load
 
     df, _ = load(s)
     pins = []
@@ -60,7 +60,7 @@ def _parties(s: Session) -> str:
             desc += f". {r.note}"
         pins.append(f"<Placemark><name>{escape(r.name)}</name><description>{escape(desc)}</description>"
                     f"<Point><coordinates>{r.lon_deg:.7f},{r.lat_deg:.7f},0</coordinates></Point></Placemark>")
-    return f"<Folder><name>Parties</name>{''.join(pins)}</Folder>" if pins else ""
+    return f"<Folder><name>Equipment</name>{''.join(pins)}</Folder>" if pins else ""
 
 
 def _rings(site: dict) -> str:
@@ -105,7 +105,7 @@ def build(s: Session) -> str | None:
                                 colour.get(mine, [150, 150, 150]), "absolute"))
     if not site and not any(parts):
         return None
-    around = (_parties(s) + _rings(site)) if site else ""
+    around = (_equipment(s) + _rings(site)) if site else ""
     kml = ('<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2" '
            'xmlns:gx="http://www.google.com/kml/ext/2.2"><Document>'
            f"<name>{escape(s.root.name)}</name>{around}{''.join(parts)}</Document></kml>")

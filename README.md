@@ -23,8 +23,18 @@ and `dw info`. Adding files later: `dw ingest` again, then `dw convert` and `dw 
 ## Open the replay (easy way)
 
 ```
-uv run dw view <session folder>
+uv run dw app
 ```
+
+One window: pick a session, press **Start replay** (plays the test from its start, looping), **Open replay**,
+**Google Earth** or **Report**. **Commands** opens a side list of the other jobs (check data, rebuild, convert,
+equipment, radar vs drones, scorecard values, timeline CSV, COURAGEOUS, seal, info). Every button runs the same
+`dw` command as below. From the command line: `uv run dw view <session folder>` (add `--start` to play).
+
+In the replay: the 3D view opens on where things happened; **Now** (top right) reads out the weather and, for each
+drone, its range, height, speed and whether the radar had it at that moment; charts sit in tabs by subject; the thin
+bar at the bottom plays the activity in a loop. Trees and the line-of-sight layer are in the file but off by default
+(switch them on in the left panel).
 
 ## Open the replay (manual)
 
@@ -171,11 +181,11 @@ IMG_0042.png,2026-10-28T09:14:30Z
 picture's own UTC time. Undeclared pictures are left out, never assumed to be UTC (`dw check` lists them). RF trace
 exports (CSV or the analyser's own format) get an adapter once a real sample file exists.
 
-## Everyone at the test (parties)
+## Equipment
 
-**`dw parties <session>`** lists everyone and everything at the test and where they were: the radar (from its own
+**`dw equipment <session>`** lists all equipment (and people) at the test and where they were: the radar (from its own
 declaration), each drone's take-off (from its log, also the header of an encrypted DJI log), the weather station
-(from its export header). The team adds what no file shows in `<session>/parties.csv` (written empty on first run):
+(from its export header). The team adds what no file shows in `<session>/equipment.csv` (written empty on first run; an older `parties.csv` is read too):
 
 ```
 name,kind,lat_deg,lon_deg,height_m,heading_deg,fov_deg,range_m,note
@@ -186,9 +196,9 @@ EO camera,camera,65.1770,26.0441,3,200,30,800,declared by the team
 `kind` is radar, operator, drone_home, pilot, weather, rf, camera, sensor, effector or other. `height_m` is above the
 ground there; left empty, a default is used and the legend says *assumed*. `heading_deg` + `fov_deg` (+ `range_m`)
 draw a coverage wedge, marked DECLARED. A team row with the same name replaces an automatic one; a bad row is left
-out with its reason. In the replay every party is a marker with a ground ring and its height pole, the legend gives
-its distance from the radar and its source, and the on-site wind is an arrow at the weather station (10 m per m/s,
-pointing where the wind blows), every second through the activity.
+out with its reason. In the replay every item is a marker with a ground ring and its height pole, the legend is a
+table with its type, distance from the radar, height and source (a swarm's take-offs share one label), and the on-site wind is an arrow at the weather station (10 m per m/s,
+pointing where the wind blows), one state per measured minute.
 
 ## Standard output for evaluators
 
@@ -199,13 +209,20 @@ pointing where the wind blows), every second through the activity.
   and the radar's altitude datum is still unverified.
 - The schema is fetched by `dw setup` (hash-pinned) and is not copied into this repo: its repository has no licence.
 
+## Stress test
+
+`uv run python scripts/stress_test.py <out folder> ouluzone 7 20` puts SIMULATED swarms of 7 and 20 drones at the
+site, runs the whole chain with every step timed, then loads each replay in a viewer without a window, plays it and
+takes five screenshots. On this desktop (30 Oct): 7 drones 15 s chain, 20 MB replay; 20 drones 26 s, 29 MB; the
+viewer loads either in 1.7 s.
+
 ## Test sites and simulated runs
 
 - **`dw site save <session> <name>`** keeps a test site (the radar's declared position and orientation) as a named
   profile in `domeware-data/sites/<name>/site.json`, outside git. `dw site list` shows them. OuluZone is saved as
   `ouluzone`.
 - **`dw site use <session> <name>`** gives a session that has no radar data yet the site of a profile, so terrain,
-  parties, weather and pictures can be replayed at once. The radar data replaces it when it arrives, and the note
+  equipment, weather and pictures can be replayed at once. The radar data replaces it when it arrives, and the note
   says how far the radar's own position was from the profile.
 - **`dw simulate <site> <new session> --drones 2 --latency 0.5 --noise 4`** puts a SIMULATED run at that exact place,
   in its real terrain, photo, buildings and forest: the pilot's phase profile at small-drone speeds (P1 two low

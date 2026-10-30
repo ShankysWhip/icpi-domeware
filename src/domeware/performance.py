@@ -122,18 +122,20 @@ def timeline(s: Session, gate_m: float = 50.0) -> pd.DataFrame | None:
     out = pd.DataFrame({"t_utc": pd.date_range(a, b, freq="1s").as_unit("ns")})
     grid = association_grid(measure(truths, tracks, a, b, gate_m), a, b) if len(tracks) else pd.DataFrame()
     x = _ns(out["t_utc"])
+    cols: dict[str, object] = {}  # all drone columns first, joined once (20 drones x 8 columns made pandas crawl)
     for name, d in truths.items():
         tt = _ns(d["t_utc"])
         inside = (x >= tt[0]) & (x <= tt[-1])
         for col, src in (("height_m", "h_rel_takeoff_m"), ("e_m", "e_m"), ("n_m", "n_m")):
-            out[f"{name}.{col}"] = np.where(inside, np.interp(x, tt, d[src].to_numpy()), np.nan).round(1)
-        out[f"{name}.ground_range_m"] = np.hypot(out[f"{name}.e_m"], out[f"{name}.n_m"]).round(1)
+            cols[f"{name}.{col}"] = np.where(inside, np.interp(x, tt, d[src].to_numpy()), np.nan).round(1)
+        cols[f"{name}.ground_range_m"] = np.hypot(cols[f"{name}.e_m"], cols[f"{name}.n_m"]).round(1)
         if len(grid):
             mine = grid[grid["drone"] == name].assign(t_utc=lambda f: f["t_utc"].dt.as_unit("ns")).set_index("t_utc")
             for col in ("track_id", "err_h_m", "class_name", "alarm"):
                 if col in mine:
                     v = out["t_utc"].map(mine[col])
-                    out[f"{name}.radar_{col}"] = (v.round(1) if col == "err_h_m" else v.astype("Int64") if col == "track_id" else v)
+                    cols[f"{name}.radar_{col}"] = (v.round(1) if col == "err_h_m" else v.astype("Int64") if col == "track_id" else v)
+    out = pd.concat([out, pd.DataFrame(cols, index=out.index)], axis=1)
     wx = s.streams / "weather" / "fmi_nearest.parquet"
     if wx.exists():
         w = pd.read_parquet(wx)

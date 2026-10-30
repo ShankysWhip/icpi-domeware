@@ -14,7 +14,8 @@
   dw timeline SESSION         views/timeline_1s.csv: every drone, its radar track, weather and events per second
   dw courageous SESSION       radar output in the COURAGEOUS format (CWA 18150 Annex H), schema-checked
   dw report SESSION           views/report.md
-  dw view SESSION             open the replay (loopback only)
+  dw view SESSION             open the replay (loopback only); --start plays the test from its start
+  dw app                      the same in one window: pick a session, press a button
   dw check SESSION            in the field: is the data complete? (offline, seconds)
   dw note SESSION "text"      a team note on the UTC clock (--at 09:14:30); shows in the replay and report
   dw seal SESSION             record the hash of every file the team brought (seal.json)
@@ -26,7 +27,7 @@
   dw setup                    new laptop: fetch the height grids and leap-second list, then run doctor
   dw site save SESSION NAME   keep a test site (radar position) as a named profile; dw site list
   dw site use SESSION NAME    use a saved site before the radar data arrives (the radar data replaces it)
-  dw parties SESSION          everyone at the test and where (radar, take-offs, pilots, weather, RF...); adds parties.csv
+  dw equipment SESSION        all equipment at the test and where (radar, take-offs, weather, RF...); adds equipment.csv
   dw simulate SITE SESSION    a SIMULATED phase-profile run at a saved site, in its real environment
 """
 
@@ -50,7 +51,7 @@ def main(argv: list[str] | None = None) -> int:
         if name == "run":
             p.add_argument("--radius", type=float, default=3000.0, help="environment radius around the radar (m)")
             p.add_argument("--no-env", action="store_true", help="skip terrain/imagery download")
-    for name in ("parties", "convert", "replay", "verify", "info", "report", "view", "events", "check", "performance", "kml", "timeline", "seal", "courageous"):
+    for name in ("equipment", "convert", "replay", "verify", "info", "report", "events", "check", "performance", "kml", "timeline", "seal", "courageous"):
         sub.add_parser(name).add_argument("session", type=Path)
     p = sub.add_parser("sync", help="copy a sealed session to another disk and check it")
     p.add_argument("session", type=Path)
@@ -69,6 +70,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--gate", type=float, default=50.0)
     sub.add_parser("list", help="all sessions in one table").add_argument("root", type=Path, nargs="?")
     sub.add_parser("doctor", help="check this laptop")
+    sub.add_parser("app", help="one window with big buttons")
+    p = sub.add_parser("view", help="open the replay")
+    p.add_argument("session", type=Path)
+    p.add_argument("--start", action="store_true", help="play the test from its start")
     sub.add_parser("setup", help="fetch height grids and leap-second list, then doctor")
     p = sub.add_parser("site", help="test-site profiles")
     p.add_argument("action", choices=["save", "list", "use"])
@@ -114,6 +119,10 @@ def main(argv: list[str] | None = None) -> int:
         from domeware.overview import setup
 
         return setup()
+    if a.cmd == "app":
+        from domeware.app import main as app_main
+
+        return app_main()
     if a.cmd == "doctor":
         from domeware.overview import doctor
 
@@ -135,14 +144,14 @@ def main(argv: list[str] | None = None) -> int:
         problems = custody.sync(s, a.dest)
         print(chr(10).join(problems) if problems else f"OK: copy at {a.dest / s.root.name} matches the seal")
         return 1 if problems else 0
-    if a.cmd == "parties":
-        from domeware import parties
+    if a.cmd == "equipment":
+        from domeware import equipment
 
-        df, problems = parties.load(s)
-        print(df.drop(columns=["height_assumed"], errors="ignore").to_string(index=False) if len(df) else "no parties yet")
+        df, problems = equipment.load(s)
+        print(df.drop(columns=["height_assumed"], errors="ignore").to_string(index=False) if len(df) else "no equipment yet")
         print(chr(10).join(problems))
-        if parties.template(s):
-            print(f"wrote {s.root / 'parties.csv'}: add a row per person or device the data does not show")
+        if equipment.template(s):
+            print(f"wrote {s.root / 'equipment.csv'}: add a row per device or person the data does not show")
         return 0
     if a.cmd == "note":
         from domeware import notes
@@ -242,16 +251,9 @@ def main(argv: list[str] | None = None) -> int:
 
         report.build(s)
     if a.cmd == "view":
-        import subprocess
+        from domeware.viewer import open_replay
 
-        rrd = s.views / "replay.rrd"
-        if not rrd.exists():
-            raise SystemExit(f"No replay yet: run dw replay {a.session}")
-        exe = Path(sys.executable).with_name("rerun.exe" if sys.platform == "win32" else "rerun")
-        subprocess.run([str(exe), "analytics", "disable"], capture_output=True)
-        # loopback only: a viewer listening on all interfaces makes Windows create firewall block rules
-        subprocess.Popen([str(exe), "--bind", "127.0.0.1", "--port", "auto", str(rrd)])
-        print(f"opening {rrd}  (if Windows asks about the firewall, press Cancel)")
+        print(open_replay(s, start=a.start) + "  (if Windows asks about the firewall, press Cancel)")
     if a.cmd == "verify":
         problems = s.verify()
         print("\n".join(problems) if problems else f"OK: {len(s.manifest['raw'])} raw files match their hashes")

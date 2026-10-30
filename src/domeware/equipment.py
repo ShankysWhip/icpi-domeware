@@ -1,8 +1,8 @@
-"""Everyone and everything at the test, placed in the replay: radar, operator, drone take-offs, pilots, weather
+"""Equipment: everything (and everyone) at the test, placed in the replay: radar, operator, drone take-offs, pilots, weather
 station, RF analyser, cameras and later any other sensor or effector.
 
 The list is built from the data where it can be (radar from its own declaration, take-off from the drone log, the
-weather station from its export header) and completed by the team in <session>/parties.csv:
+weather station from its export header) and completed by the team in <session>/equipment.csv (an older parties.csv is read too):
 
   name,kind,lat_deg,lon_deg,height_m,heading_deg,fov_deg,range_m,note
   PR200 (Niklas),rf,65.17649,26.04319,1.5,,,,beside the drone pilot, position not measured
@@ -10,7 +10,7 @@ weather station from its export header) and completed by the team in <session>/p
 
 kind: one of KINDS. height_m: above the ground at that point (default per kind, marked as assumed).
 heading_deg + fov_deg (+ range_m, default 500) draw a coverage wedge: DECLARED by the team, never measured here.
-A team row with the same name as an automatic one replaces it. Every party carries its source.
+A team row with the same name as an automatic one replaces it. Every item carries its source.
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ RGB = {"radar": [255, 120, 0], "operator": [255, 160, 60], "drone_home": [235, 2
        "effector": [255, 80, 80], "other": [200, 200, 200]}
 DEFAULT_HEIGHT_M = {"drone_home": 0.0, "pilot": 1.7, "operator": 1.5, "rf": 1.5, "weather": 2.0, "camera": 2.0}
 COLUMNS = ["name", "kind", "lat_deg", "lon_deg", "height_m", "heading_deg", "fov_deg", "range_m", "note"]
+KIND_LABEL = {"drone_home": "take-off", "rf": "RF analyser", "weather": "weather station"}
 WIND_M_PER_MS = 10.0  # arrow length in the replay: 10 m per 1 m/s of wind
 
 
@@ -69,9 +70,9 @@ def auto(s: Session) -> list[dict]:
 
 
 def team(s: Session) -> tuple[list[dict], list[str]]:
-    """Rows from parties.csv; a bad row is left out with its reason, never half-used."""
-    p = s.root / "parties.csv"
-    if not p.exists():
+    """Rows from equipment.csv; a bad row is left out with its reason, never half-used."""
+    p = next((s.root / n for n in ("equipment.csv", "parties.csv") if (s.root / n).exists()), None)
+    if p is None:
         return [], []
     df = pd.read_csv(p, dtype=str, keep_default_na=False)
     rows, problems = [], []
@@ -82,11 +83,11 @@ def team(s: Session) -> tuple[list[dict], list[str]]:
                else "lat_deg/lon_deg missing or out of range" if lat is None or lon is None or abs(lat) > 90 or abs(lon) > 180
                else None)
         if why:
-            problems.append(f"parties.csv row {i + 2}: {why}: left out")
+            problems.append(f"{p.name} row {i + 2}: {why}: left out")
             continue
         rows.append({"name": name, "kind": kind, "lat_deg": lat, "lon_deg": lon,
                      **{c: _num(r.get(c, "")) for c in ("height_m", "heading_deg", "fov_deg", "range_m")},
-                     "note": r.get("note", "").strip(), "source": "parties.csv (team)"})
+                     "note": r.get("note", "").strip(), "source": f"{p.name} (team)"})
     return rows, problems
 
 
@@ -104,9 +105,9 @@ def load(s: Session) -> tuple[pd.DataFrame, list[str]]:
 
 
 def template(s: Session) -> bool:
-    """Write an empty parties.csv for the team (header only) if there is none. True if written."""
-    p = s.root / "parties.csv"
-    if p.exists():
+    """Write an empty equipment.csv for the team (header only) if there is none. True if written."""
+    p = s.root / "equipment.csv"
+    if p.exists() or (s.root / "parties.csv").exists():
         return False
     p.write_text(",".join(COLUMNS) + "\n", encoding="utf-8")
     return True
@@ -120,11 +121,11 @@ def wind_vectors(speed_ms, dir_from_deg) -> np.ndarray:
 
 
 def _slug(name: str) -> str:
-    return re.sub(r"[^A-Za-z0-9_]+", "_", name).strip("_") or "party"
+    return re.sub(r"[^A-Za-z0-9_]+", "_", name).strip("_") or "item"
 
 
-def log_parties(rec, s: Session, site: dict, span: tuple[pd.Timestamp, pd.Timestamp] | None, stats: dict) -> list[str]:
-    """Draw every party in world/parties; the on-site wind as an arrow at the weather station. Returns legend lines."""
+def log_equipment(rec, s: Session, site: dict, span: tuple[pd.Timestamp, pd.Timestamp] | None, stats: dict) -> list[str]:
+    """Draw every item in world/equipment; the on-site wind as an arrow at the weather station. Returns legend lines."""
     import rerun as rr
 
     from domeware.replay import enu
@@ -135,17 +136,23 @@ def log_parties(rec, s: Session, site: dict, span: tuple[pd.Timestamp, pd.Timest
     if not len(df):
         return []
     ground = _ground_heights(s, site, df)
-    legend = ["", "# Parties", "", "Where everyone was. Source in brackets; *assumed* = height not stated anywhere."]
+    rows, notes, assumed = [], [], False
+    homes = int((df["kind"] == "drone_home").sum())  # a swarm's take-offs side by side: one label for all of them
     for r, g in zip(df.itertuples(), ground, strict=True):
         e, n, u = (float(v) for v in enu(r.lat_deg, r.lon_deg, g + r.height_m, site["lat_deg"], site["lon_deg"], site["alt_m"]))
         _, _, u0 = (float(v) for v in enu(r.lat_deg, r.lon_deg, g, site["lat_deg"], site["lon_deg"], site["alt_m"]))
-        legend.append(f"- **{r.name}** ({r.kind}): {np.hypot(e, n):.0f} m from the radar, "
-                      f"{r.height_m:.1f} m above ground{' *assumed*' if r.height_assumed else ''} [{r.source}]"
-                      + (f". {r.note}" if isinstance(r.note, str) and r.note else ""))
+        rows.append(f"| {r.name} | {KIND_LABEL.get(r.kind, r.kind)} | {np.hypot(e, n):.0f} m | "
+                    f"{r.height_m:.1f} m{' *' if r.height_assumed else ''} | {_short(r.source)} |")
+        assumed |= bool(r.height_assumed)
+        if isinstance(r.note, str) and r.note:
+            notes.append(f"- **{r.name}**: {r.note}")
         if r.kind == "radar" and abs(e) < 1 and abs(n) < 1:
             continue  # the site radar is already drawn with its mast and range rings
-        path, rgb = f"world/parties/{_slug(r.name)}", RGB[r.kind]
-        rec.log(path, rr.Points3D([[e, n, u]], colors=[rgb], radii=2.5, labels=[r.name], show_labels=True), static=True)
+        path, rgb = f"world/equipment/{_slug(r.name)}", RGB[r.kind]
+        crowd = r.kind == "drone_home" and homes > 3
+        label = f"take-offs ({homes} drones)" if crowd else r.name
+        first = not crowd or r.Index == df.index[df["kind"] == "drone_home"][0]
+        rec.log(path, rr.Points3D([[e, n, u]], colors=[rgb], radii=2.5, labels=[label], show_labels=first), static=True)
         th = np.linspace(0, 2 * np.pi, 49)
         ring = np.column_stack([e + 8 * np.sin(th), n + 8 * np.cos(th), np.full_like(th, u0 + 0.3)])
         strips = [ring, [[e, n, u0], [e, n, u]]] if r.height_m > 0.3 else [ring]
@@ -160,12 +167,18 @@ def log_parties(rec, s: Session, site: dict, span: tuple[pd.Timestamp, pd.Timest
                     static=True)
         if r.kind == "weather":
             _log_wind(rec, s, [e, n, u + 1.0], span, stats)
-    stats["parties"] = df[["name", "kind", "source"]].to_dict("records")
-    return legend
+    stats["equipment"] = df[["name", "kind", "source"]].to_dict("records")
+    return ["", "# Equipment", "", "| Equipment | Type | From radar | Height AGL | Source |", "|---|---|--:|--:|---|", *rows,
+            *(["", "\\* height assumed: not stated in any file"] if assumed else []), *(["", *notes] if notes else [])]
+
+
+def _short(source: str) -> str:
+    """'DJI log header (dji_details/details.json)' -> 'DJI log header'; the full source stays in dw equipment."""
+    return re.split(r" \(|;", str(source))[0].strip()
 
 
 def _ground_heights(s: Session, site: dict, df: pd.DataFrame) -> list[float]:
-    """Ground at each party in the radar's height frame: DEM + the radar alignment, else the radar's ground level."""
+    """Ground at each item in the radar's height frame: DEM + the radar alignment, else the radar's ground level."""
     fallback = site.get("ground_level_m") if site.get("ground_level_m") is not None else site["alt_m"]
     if not (s.env / "dem.tif").exists():
         return [fallback] * len(df)
@@ -200,9 +213,9 @@ def _log_wind(rec, s: Session, at: list[float], span, stats: dict) -> None:
               for v, d, q in zip(w["wind_ms"], w["wind_dir_deg"], gust, strict=True)]
     t = rr.TimeColumn("utc", timestamp=_ts(w["t_utc"]))
     vec = wind_vectors(w["wind_ms"], w["wind_dir_deg"])
-    rec.send_columns("world/parties/wind", indexes=[t],
+    rec.send_columns("world/equipment/wind", indexes=[t],
                      columns=[*rr.Arrows3D.columns(vectors=vec).partition([1] * len(vec)),
                               *rr.Arrows3D.columns(labels=labels)])
-    rec.log("world/parties/wind", rr.Arrows3D.from_fields(origins=[at], colors=[RGB["weather"]], radii=1.2,
+    rec.log("world/equipment/wind", rr.Arrows3D.from_fields(origins=[at], colors=[RGB["weather"]], radii=1.2,
                                                           show_labels=True), static=True)
     stats["wind_arrow_minutes"] = len(w)
