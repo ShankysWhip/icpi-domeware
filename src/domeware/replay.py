@@ -32,11 +32,12 @@ TM35_TO_LL = Transformer.from_crs("EPSG:3067", "EPSG:4326", always_xy=True)
 LL_TO_TM35 = Transformer.from_crs("EPSG:4326", "EPSG:3067", always_xy=True)
 CLASS_RANK = ["UNCLASSIFIED", "OTHER", "VEHICLE", "SUSPECTED_DRONE", "DRONE"]
 CLASS_RGB = {"DRONE": [30, 120, 255], "SUSPECTED_DRONE": [255, 140, 0], "VEHICLE": [0, 170, 120],
-             "OTHER": [120, 120, 120], "UNCLASSIFIED": [180, 180, 180]}
+             "OTHER": [120, 120, 120], "UNCLASSIFIED": [150, 150, 150]}
 ALARM_RGB = [230, 40, 40]
 # one colour per drone, kept apart from the radar class colours above; a radar track that was a drone wears its colour
-DRONE_RGB = [[0, 230, 90], [255, 60, 200], [0, 210, 230], [240, 220, 40], [160, 90, 255], [150, 255, 60],
-             [255, 150, 190], [0, 160, 140], [255, 255, 255], [200, 120, 60]]
+# mid-tone colours: readable on the dark and the light viewer theme and on the HUD's white panels
+DRONE_RGB = [[0, 190, 80], [225, 40, 175], [0, 170, 205], [220, 170, 0], [140, 80, 240], [105, 190, 30],
+             [235, 100, 145], [0, 145, 125], [70, 70, 80], [190, 110, 50]]
 WEATHER_STYLE = {  # on-site weather lane -> name in the charts, colour, line width (or point size)
     "wind_ms": ("Wind", [70, 160, 255], 3.0), "gust_ms": ("Gust", [255, 140, 0], 2.0),
     "wind_dir_deg": ("From (deg)", [70, 160, 255], 3.0), "temp_c": ("Temperature", [230, 80, 80], 2.5),
@@ -48,7 +49,7 @@ TAIL_HZ = 5.0  # the tail is redrawn at most this often
 HOLD_S = 5.0  # a radar track that stops updating disappears after this long (it reappears with its next update)
 TREES_NEAR_M = 1200.0  # tree tops are drawn only this close to the radar
 CURTAIN_STEP_S = 2.0  # one vertical line from a drone path to the ground every 2 s
-DRONE_COLOUR_NAMES = ["green", "magenta", "cyan", "yellow", "purple", "lime", "pink", "teal", "white", "brown"]
+DRONE_COLOUR_NAMES = ["green", "magenta", "cyan", "yellow", "purple", "lime", "pink", "teal", "graphite", "brown"]
 
 
 def enu(lat, lon, h, lat0, lon0, h0):

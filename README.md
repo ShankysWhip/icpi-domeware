@@ -28,26 +28,29 @@ uv run dw app
 
 One window: pick a session and press **Start replay**: the replay HUD opens in its own app window (Microsoft Edge
 `--app`) and plays the test from its start, looping. **Classic 3D** opens the same replay in the Rerun viewer with
-all its charts; **Google Earth** and **Report** open those files. **Commands** opens a side list of the other jobs
-(check data, rebuild, convert, equipment, radar vs drones, scorecard values, timeline CSV, COURAGEOUS, seal, info).
+all its charts; **Google Earth** and **Report** open those files. Under the session name a line says what the
+session has (radar, drone paths, screenshots, replay ready). **All commands** opens a side panel grouped by what you
+want to do (check the data, build, results, share and archive), each command with one line on what it does; a
+progress bar runs while it works, and the details stay folded away unless something fails.
 Every button runs the same `dw` command as the command line: `uv run dw hud <session> --play`, `uv run dw view <session>`.
 
 ### The replay HUD (`dw hud`)
 
-The 3D scene (the Rerun web viewer) with domeware's own panels around it, all on one clock:
+The 3D scene (the Rerun web viewer) with domeware's own panels around it, all on one clock, on a clean white
+screen (numbers in monospace, small spaced labels, status lights):
 
 - **Mission clock:** the time (UTC or local), T+ from the start of the activity, the phase, and a readout to choose:
   *Overview* (wind, gust, temperature, drones airborne, radar hold, events), *Drones* (range, height, speed, radar
-  tracked or lost for each), *Radar* (tracks alive, share of airborne time tracked per drone), *Log* (latest events).
-- **Atmosphere:** wind dial and numbers; wind, gust, direction, temperature, humidity and pressure in one chart,
+  tracked or lost for each), *Radar* (tracks alive, share of airborne time tracked per drone), *Events* (latest events, click one to jump there).
+- **Weather:** wind dial and numbers; wind, gust, direction, temperature, humidity and pressure in one chart,
   each series switched on or off; click the chart to jump there.
 - **Equipment:** a choice list (all, sensors, weather, take-offs, crew), a radar-centred scope (site or whole area,
-  with the drones moving on it) and the list itself; pick an item, or click it in 3D, to see its position, height
-  and where the number came from.
+  with the drones moving on it) and the list itself (a swarm's take-off points fold into one row); pick an item, or
+  click it in 3D, to see its position, height and where the number came from.
 - **Timeline:** play, ±10 s, start/end, speed ½× to 30×, loop; lanes for the activity and its phases, each drone
   (bright where the radar tracked it, hatched red where it did not), radar tracks alive, events, screenshots as
   thumbnails (hover for a preview, click for full size) and wind. Wheel zooms, double-click fits the activity.
-- Keys: Space play/pause, ←/→ 5 s, Shift ←/→ 60 s, Home/End.
+- Keys (the **?** button lists them): Space play/pause, ←/→ 5 s, Shift ←/→ 60 s, Home/End.
 
 It is served from this computer only (127.0.0.1) and stops by itself about 45 s after its window is closed. The data
 is written by `dw replay` (`views/hud/`); the web viewer comes from `dw setup` (hash-pinned in `domeware-vendor`,

@@ -49,6 +49,16 @@ const dist = (m) => (m === null || m === undefined || !Number.isFinite(m) ? "—
 const COMPASS = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
 const compass = (deg) => COMPASS[Math.round((((deg % 360) + 360) % 360) / 22.5) % 16];
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+// Drone colours are picked for the dark 3D scene; on the white panels a light one (yellow, white) needs more ink.
+function ink(hex) {
+  const n = parseInt(String(hex).slice(1), 16), r = n >> 16, g = (n >> 8) & 255, b = n & 255;
+  const lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+  if (lum <= 0.52) return hex;
+  const k = 0.52 / lum;
+  return "#" + [r, g, b].map((c) => Math.round(c * k).toString(16).padStart(2, "0")).join("");
+}
+const KIND_COLOR = { radar: "#d9620b", operator: "#b7700b", drone_home: "#475569", pilot: "#a3540a", weather: "#0a8db6",
+  rf: "#6252cc", camera: "#0f766e", sensor: "#4f46e5", effector: "#cf3a57", other: "#64748b" };
 const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
 function bisect(ts, t) {
@@ -105,7 +115,7 @@ async function startViewer() {
   // full URLs: the viewer reads "/data/x" as the host "data"
   const urls = ["/data/replay.rrd", "/data/replay_hud.rbl"].map((u) => new URL(u, location.href).href);
   await viewer.start(urls, $("#viewer"), {
-    hide_welcome_screen: true, check_for_updates_on_startup: false, theme: "dark", width: "100%", height: "100%" });
+    hide_welcome_screen: true, check_for_updates_on_startup: false, theme: "light", width: "100%", height: "100%" });
   for (const p of ["top", "blueprint", "selection", "time"]) { try { viewer.override_panel_state(p, "hidden"); } catch { /* older viewer */ } }
   waitForTimeline(0);
 }
@@ -238,7 +248,7 @@ const Clock = {
     for (const r of S.data.runs) bar.append(h("i", { class: "mk", style: `left:${((r.start - a) / (b - a)) * 100}%` }));
     for (const sc of S.data.screens) if (sc.t >= a && sc.t <= b) bar.append(h("i", { class: "mk shot", style: `left:${((sc.t - a) / (b - a)) * 100}%` }));
     bar.addEventListener("click", (e) => { const r = bar.getBoundingClientRect(); seek(a + ((e.clientX - r.left) / r.width) * (b - a)); });
-    this.modeSeg = seg([["overview", "Overview"], ["drones", "Drones", S.data.drones.length || null], ["radar", "Radar"], ["log", "Log", S.data.events.length || null]],
+    this.modeSeg = seg([["overview", "Overview"], ["drones", "Drones", S.data.drones.length || null], ["radar", "Radar"], ["log", "Events", S.data.events.length || null]],
       S.mode, (m) => this.setMode(m));
     this.readout = h("div", { class: "readout" });
     root.append(
@@ -279,7 +289,7 @@ const Clock = {
       rows.append(h("div", { class: "drow h", style: "cursor:default" }, h("i"), h("span", {}, "DRONE"), h("span", {}, "RANGE"), h("span", {}, "ALT"), h("span", {}, "SPEED"), h("span", { style: "justify-self:end" }, "RADAR")));
       for (const dr of d.drones) {
         const cells = { range: h("span"), alt: h("span"), spd: h("span"), badge: h("span", { class: "badge off" }, "—") };
-        const row = h("div", { class: "drow" }, h("i", { class: "bar", style: `background:${dr.color}` }),
+        const row = h("div", { class: "drow" }, h("i", { class: "bar", style: `background:${dr.ui}` }),
           h("span", { class: "n", title: dr.name }, dr.name), cells.range, cells.alt, cells.spd, cells.badge);
         row.addEventListener("click", () => { S.drone = S.drone === dr.name ? null : dr.name; Equip.renderScope(); this.update(); });
         this.cells[dr.name] = { row, ...cells };
@@ -301,7 +311,7 @@ const Clock = {
         const share = dr.tracked_share ?? 0;
         bars.append(h("div", { class: "hbar" },
           h("div", {}, h("div", { class: "t" }, h("b", {}, dr.name), h("span", {}, dr.err_median_m !== null ? `median ${fx(dr.err_median_m, 1)} m off` : "never tracked")),
-            h("div", { class: "track" }, h("i", { style: `width:${share * 100}%;background:${dr.color}` }))),
+            h("div", { class: "track" }, h("i", { style: `width:${share * 100}%;background:${dr.ui}` }))),
           h("div", { class: "pct", style: `color:${share > 0.9 ? "var(--green)" : share > 0.5 ? "var(--amber)" : "var(--red)"}` }, `${Math.round(share * 100)}%`)));
       }
       this.cells.big = big;
@@ -332,7 +342,7 @@ const Clock = {
       const wind = wx ? at(wx.t, wx.wind, t) : null, gust = wx ? at(wx.t, wx.gust, t) : null, dir = wx ? at(wx.t, wx.dir, t) : null;
       const temp = wx ? at(wx.t, wx.temp, t) : null, rh = wx ? at(wx.t, wx.rh, t) : null;
       this.tile(c.wind, wind === null ? "—" : `${fx(wind)}<small>m/s</small>`, dir === null ? "no data" : `from ${compass(dir)} ${fx(dir, 0)}°`);
-      this.tile(c.gust, gust === null ? "—" : `${fx(gust)}<small>m/s</small>`, wx ? `max ${fx(Math.max(...(wx.gust || [0]).filter((v) => v !== null)))} m/s` : "");
+      this.tile(c.gust, gust === null ? "—" : `${fx(gust)}<small>m/s</small>`, S.maxGust !== null ? `max ${fx(S.maxGust)} m/s` : "");
       this.tile(c.temp, temp === null ? "—" : `${fx(temp)}<small>°C</small>`, rh === null ? "" : `humidity ${fx(rh, 0)} %`);
       if (d.drones.length) {
         const up = d.drones.filter((x) => droneAt(x, "e", t) !== null);
@@ -392,8 +402,8 @@ const Intel = {
   build() {
     const tabs = $("#intelTabs");
     this.b = {
-      atmo: h("button", { onclick: () => this.show("atmo") }, "ATMOSPHERE"),
-      equip: h("button", { onclick: () => this.show("equip") }, "EQUIPMENT", h("em", {}, String(S.data.equipment.length))),
+      atmo: h("button", { onclick: () => this.show("atmo") }, "Weather"),
+      equip: h("button", { onclick: () => this.show("equip") }, "Equipment", h("em", {}, String(S.data.equipment.length))),
     };
     tabs.append(this.b.atmo, this.b.equip);
     this.show("atmo");
@@ -409,8 +419,8 @@ const Intel = {
 
 // ---------- atmosphere ----------
 const WX = [
-  ["wind", "Wind", "#5cc6e3", "left"], ["gust", "Gust", "#e8b05a", "left"], ["dir", "Dir", "#8fb0d0", "band"],
-  ["temp", "Temp", "#e070c0", "right"], ["rh", "RH", "#4fcf8a", "right"], ["pressure", "Press", "#a291e8", "right"],
+  ["wind", "Wind", "#0a8db6", "left"], ["gust", "Gust", "#d48a0e", "left"], ["dir", "Dir", "#5b7fa6", "band"],
+  ["temp", "Temp", "#b13c8b", "right"], ["rh", "RH", "#138a52", "right"], ["pressure", "Press", "#6252cc", "right"],
 ];
 const WX_UNIT = { wind: "m/s", gust: "m/s", dir: "°", temp: "°C", rh: "%", pressure: "hPa" };
 function linePath(ts, vs, X, Y) {
@@ -441,7 +451,7 @@ const Atmo = {
     if (!wx) { root.append(h("div", { class: "empty" }, "No weather data in this session.")); return; }
     // compass
     const cmp = sv("svg", { class: "compass", viewBox: "-52 -52 104 104" });
-    cmp.append(sv("circle", { class: "ring", r: 44 }), sv("circle", { class: "ring", r: 30, "stroke-dasharray": "2 4" }));
+    cmp.append(sv("circle", { class: "face", r: 45 }), sv("circle", { class: "ring", r: 30, "stroke-dasharray": "2 4" }));
     for (let a = 0; a < 360; a += 15) {
       const major = a % 90 === 0, r0 = major ? 37 : 40, rad = (a * Math.PI) / 180;
       cmp.append(sv("line", { class: `tick ${major ? "major" : ""}`, x1: Math.sin(rad) * r0, y1: -Math.cos(rad) * r0, x2: Math.sin(rad) * 44, y2: -Math.cos(rad) * 44 }));
@@ -452,7 +462,7 @@ const Atmo = {
     }
     this.needle = sv("g", { class: "needle" },
       sv("line", { class: "tail", x1: 0, y1: -34, x2: 0, y2: 18 }),
-      sv("path", { d: "M0,30 L-7,14 L0,18 L7,14 Z" }), sv("circle", { r: 3.2, fill: "#5cc6e3" }));
+      sv("path", { d: "M0,30 L-7,14 L0,18 L7,14 Z" }), sv("circle", { r: 3.2, fill: "#0a8db6" }));
     cmp.append(this.needle);
     // numbers
     this.vWind = h("span", { class: "v" }, "—");
@@ -498,7 +508,7 @@ const Atmo = {
     const Y = (v) => pt + ih - (v / ymax) * ih;
     this.geo = { W, pl, iw, x0, x1, X, Y, pt, ih };
     const defs = sv("defs", {}, sv("linearGradient", { id: "gWind", x1: 0, y1: 0, x2: 0, y2: 1 },
-      sv("stop", { offset: "0%", "stop-color": "#5cc6e3", "stop-opacity": 0.28 }), sv("stop", { offset: "100%", "stop-color": "#5cc6e3", "stop-opacity": 0 })),
+      sv("stop", { offset: "0%", "stop-color": "#0a8db6", "stop-opacity": 0.28 }), sv("stop", { offset: "100%", "stop-color": "#0a8db6", "stop-opacity": 0 })),
       sv("filter", { id: "glow", x: "-20%", y: "-20%", width: "140%", height: "140%" }, sv("feGaussianBlur", { stdDeviation: 2.2, result: "b" }),
         sv("feMerge", {}, sv("feMergeNode", { in: "b" }), sv("feMergeNode", { in: "SourceGraphic" }))));
     svg.append(defs);
@@ -518,9 +528,9 @@ const Atmo = {
     svg.append(grid, axis);
     if (S.wx.wind && wx.wind) {
       svg.append(sv("path", { d: areaPath(wx.t, wx.wind, X, Y, pt + ih), fill: "url(#gWind)" }));
-      svg.append(sv("path", { d: linePath(wx.t, wx.wind, X, Y), fill: "none", stroke: "#5cc6e3", "stroke-width": 2 }));
+      svg.append(sv("path", { d: linePath(wx.t, wx.wind, X, Y), fill: "none", stroke: "#0a8db6", "stroke-width": 2 }));
     }
-    if (S.wx.gust && wx.gust) svg.append(sv("path", { d: linePath(wx.t, wx.gust, X, Y), fill: "none", stroke: "#e8b05a", "stroke-width": 1.5, "stroke-dasharray": "5 3" }));
+    if (S.wx.gust && wx.gust) svg.append(sv("path", { d: linePath(wx.t, wx.gust, X, Y), fill: "none", stroke: "#d48a0e", "stroke-width": 1.5, "stroke-dasharray": "5 3" }));
     this.rs = {};
     let rightAxis = false;
     for (const [k, , color, side] of WX) {
@@ -550,7 +560,7 @@ const Atmo = {
         const x = X(wx.t[i]);
         if (x - lastX < 15 || x < pl || x > pl + iw) continue;
         lastX = x;
-        band.append(sv("path", { d: "M0,-5 L3.6,3.5 L0,1.6 L-3.6,3.5 Z", fill: "#8fb0d0", opacity: 0.8, transform: `translate(${x.toFixed(1)},${pt - 11}) rotate(${(d + 180).toFixed(0)})` }));
+        band.append(sv("path", { d: "M0,-5 L3.6,3.5 L0,1.6 L-3.6,3.5 Z", fill: "#5b7fa6", opacity: 0.8, transform: `translate(${x.toFixed(1)},${pt - 11}) rotate(${(d + 180).toFixed(0)})` }));
       }
       svg.append(band);
     }
@@ -674,8 +684,20 @@ const Equip = {
     const vis = this.visible();
     this.ddBtn.replaceChildren(h("span", {}, g[1]), h("em", {}, String(vis.length)));
     for (const b of this.menu.children) b.classList.toggle("on", b.dataset.k === S.filter);
-    this.list.replaceChildren(...vis.map((it) => {
-      const ico = h("span", { class: "eq-ico", style: `color:${it.color}`, html: `<svg viewBox="0 0 24 24">${ICON[it.kind] || ICON.other}</svg>` });
+    // a swarm's take-off points fold into one row under "All": click it to see them
+    const homes = vis.filter((i) => i.kind === "drone_home");
+    const fold = S.filter === "all" && homes.length > 3 && !homes.some((i) => i.id === S.sel);
+    const shown = fold ? vis.filter((i) => i.kind !== "drone_home") : vis;
+    const group = fold ? (() => {
+      const row = h("div", { class: "eq-row" }, h("div", { class: "eq-main" },
+        h("span", { class: "eq-ico", style: `color:${KIND_COLOR.drone_home}`, html: `<svg viewBox="0 0 24 24">${ICON.drone_home}</svg>` }),
+        h("div", {}, h("div", { class: "eq-name" }, "Take-off points"), h("div", { class: "eq-type" }, `${homes.length} drones · click to list them`)),
+        h("div", { class: "eq-pos" }, dist(Math.min(...homes.map((i) => i.range_m))), h("small", {}, "nearest to the radar"))));
+      row.addEventListener("click", () => { S.filter = "launch"; this.renderList(); this.renderScope(); });
+      return row;
+    })() : null;
+    this.list.replaceChildren(...(group ? [group] : []), ...shown.map((it) => {
+      const ico = h("span", { class: "eq-ico", style: `color:${KIND_COLOR[it.kind] || KIND_COLOR.other}`, html: `<svg viewBox="0 0 24 24">${ICON[it.kind] || ICON.other}</svg>` });
       const main = h("div", { class: "eq-main" }, ico,
         h("div", { style: "min-width:0" }, h("div", { class: "eq-name", title: it.name }, it.name), h("div", { class: "eq-type" }, it.type)),
         h("div", { class: "eq-pos" }, it.id === "radar" ? "ORIGIN" : dist(it.range_m), h("small", {}, it.id === "radar" ? "radar frame" : `${fx(it.bearing_deg, 0)}° · ${compass(it.bearing_deg)}`)));
@@ -723,8 +745,8 @@ const Equip = {
       const sel = S.sel === it.id;
       const g = sv("g", { class: `item ${sel ? "sel" : ""}`, opacity: vis.has(it.id) ? 1 : 0.22 });
       if (sel) g.append(sv("circle", { class: "halo", cx: x, cy: y, r: 9 }));
-      if (it.kind === "radar") g.append(sv("path", { d: `M${x},${y - 7} L${x + 6},${y + 5} L${x - 6},${y + 5} Z`, fill: it.color, stroke: "#000", "stroke-width": 1 }));
-      else g.append(sv("circle", { class: "dot", cx: x, cy: y, r: sel ? 6 : 4.6, fill: it.color }));
+      if (it.kind === "radar") g.append(sv("path", { d: `M${x},${y - 8} L${x + 7},${y + 5} L${x - 7},${y + 5} Z`, fill: KIND_COLOR.radar, stroke: "#fff", "stroke-width": 1.5 }));
+      else g.append(sv("circle", { class: "dot", cx: x, cy: y, r: sel ? 6.5 : 5, fill: KIND_COLOR[it.kind] || KIND_COLOR.other }));
       if (sel || items.length <= 3) g.append(sv("text", { x: x + 9, y: y - 8 }, it.name));
       g.addEventListener("click", () => this.select(it.id));
       g.addEventListener("pointermove", (e) => Tip.show(`<b>${esc(it.name)}</b><br><span style="color:var(--muted)">${esc(it.type)} · ${it.id === "radar" ? "origin" : `${dist(it.range_m)} @ ${fx(it.bearing_deg, 0)}°`}</span>`, e.clientX, e.clientY));
@@ -734,11 +756,14 @@ const Equip = {
     this.live = sv("g", {});
     svg.append(this.live);
     this.P = P;
+    this.liveKey = null;
     this.updateLive();
   },
   updateLive() {
-    if (!this.live || !this.P || $("#tabEquip").hidden) return;
-    const t = S.t;
+    if (!this.live || !this.P || $("#tabEquip").hidden || !S.data.drones.length) return;
+    const t = S.t, key = `${Math.round(t / 250)}|${S.drone}|${S.scope}`;
+    if (key === this.liveKey) return;  // nothing moved since the last drawing
+    this.liveKey = key;
     this.live.replaceChildren();
     for (const d of S.data.drones) {
       const e = droneAt(d, "e", t), n = droneAt(d, "n", t);
@@ -754,10 +779,10 @@ const Equip = {
       const big = S.drone === d.name;
       const tracked = droneAt(d, "err", t) !== null;
       const g = sv("g", { class: "drone" });
-      if (tail) g.append(sv("path", { d: tail, fill: "none", stroke: d.color, "stroke-width": 1.4, opacity: 0.6 }));
-      g.append(sv("circle", { cx: x, cy: y, r: big ? 5.5 : 4, fill: d.color, opacity: out ? 0.55 : 1 }));
-      if (S.data.radar) g.append(sv("circle", { cx: x, cy: y, r: big ? 9 : 7, fill: "none", stroke: tracked ? "#4fcf8a" : "#e8627a", "stroke-width": 1.2, opacity: 0.85 }));
-      if (big || S.data.drones.length <= 4) g.append(sv("text", { x: x + 8, y: y + 3, fill: d.color }, d.name));
+      if (tail) g.append(sv("path", { d: tail, fill: "none", stroke: d.ui, "stroke-width": 1.6, opacity: 0.55 }));
+      g.append(sv("circle", { cx: x, cy: y, r: big ? 6 : 4.5, fill: d.ui, opacity: out ? 0.55 : 1 }));
+      if (S.data.radar) g.append(sv("circle", { cx: x, cy: y, r: big ? 9 : 7, fill: "none", stroke: tracked ? "#138a52" : "#cf3a57", "stroke-width": 1.2, opacity: 0.85 }));
+      if (big || S.data.drones.length <= 4) g.append(sv("text", { x: x + 8, y: y + 3, fill: d.ui }, d.name));
       this.live.append(g);
     }
   },
@@ -854,9 +879,14 @@ const TL = {
     const x = this.x(S.t), inside = S.t >= a && S.t <= b;
     this.ph.style.display = inside ? "" : "none";
     this.ph.style.transform = `translateX(${x}px)`;
-    this.ph.firstChild.textContent = hms(S.t);
-    this.nowB.textContent = hms(S.t);
-    this.nowS.textContent = `${S.tz === "UTC" ? "UTC" : "LOCAL"} · ${dur(S.t - S.act[0])}`;
+    const sec = Math.floor(S.t / 1000) + S.tz;
+    if (sec !== this.lastSec) {  // text only when the second changes: formatting dates every frame is not free
+      this.lastSec = sec;
+      const txt = hms(S.t);
+      this.ph.firstChild.textContent = txt;
+      this.nowB.textContent = txt;
+      this.nowS.textContent = `${S.tz === "UTC" ? "UTC" : "LOCAL"} · ${dur(S.t - S.act[0])}`;
+    }
   },
   render() {
     this.W = this.track.clientWidth || 1;
@@ -893,11 +923,11 @@ const TL = {
         for (const [a, b] of dr.flying) {
           if (!within(a, b)) continue;
           const cls = d.radar ? "seg-lost" : "seg-fly";
-          L.drones.append(h("div", { class: cls, style: `left:${X(a)}px;width:${Math.max(2, X(b) - X(a))}px;top:${y - (d.radar ? 3 : 2)}px;${d.radar ? "" : `background:${dr.color}`}`, title: `${dr.name}: airborne${d.radar ? ", radar not on it" : ""}` }));
+          L.drones.append(h("div", { class: cls, style: `left:${X(a)}px;width:${Math.max(2, X(b) - X(a))}px;top:${y - (d.radar ? 3 : 2)}px;${d.radar ? "" : `background:${dr.ui}`}`, title: `${dr.name}: airborne${d.radar ? ", radar not on it" : ""}` }));
         }
         for (const [a, b] of dr.tracked) {
           if (!within(a, b)) continue;
-          L.drones.append(h("div", { class: "seg-trk", style: `left:${X(a)}px;width:${Math.max(2, X(b) - X(a))}px;top:${y - 3}px;background:${dr.color};color:${dr.color}`, title: `${dr.name}: tracked by the radar` }));
+          L.drones.append(h("div", { class: "seg-trk", style: `left:${X(a)}px;width:${Math.max(2, X(b) - X(a))}px;top:${y - 3}px;background:${dr.ui}`, title: `${dr.name}: tracked by the radar` }));
         }
       });
     } else if (d.flights_header.length) {
@@ -914,7 +944,7 @@ const TL = {
         for (let i = ia; i < ib; i++) m = Math.max(m, r.alive[i]);
         if (m) path += `M${(k * 2).toFixed(0)},${lh}V${(lh - 2 - (m / max) * (lh - 6)).toFixed(1)}`;
       }
-      const svg = sv("svg", { viewBox: `0 0 ${this.W} ${lh}`, preserveAspectRatio: "none" }, sv("path", { d: path, stroke: "#5cc6e3", "stroke-width": 1.6, opacity: 0.8 }));
+      const svg = sv("svg", { viewBox: `0 0 ${this.W} ${lh}`, preserveAspectRatio: "none" }, sv("path", { d: path, stroke: "#0a8db6", "stroke-width": 1.6, opacity: 0.8 }));
       L.radar.append(svg);
     } else L.radar.append(h("div", { class: "lane-note" }, d.status.drone_logs_encrypted || d.status.screens ? "radar data pending (third party)" : "no radar data"));
     // events
@@ -933,7 +963,7 @@ const TL = {
       const room = x - last >= 54;
       const el = room
         ? h("div", { class: "thumb", style: `left:${x}px;top:4px` }, h("img", { src: `/data/${sc.thumb}`, alt: "", loading: "lazy" }))
-        : h("div", { class: "thumb", style: `left:${x}px;top:26px;width:4px;height:12px;margin-left:-2px;border-radius:2px;background:var(--violet)` });
+        : h("div", { class: "thumb pip", style: `left:${x}px;top:24px` });
       if (room) last = x;
       el.addEventListener("pointerenter", (ev) => Tip.show(`<b>${hms(sc.t)}</b> <span style="color:var(--muted)">${esc(sc.group.toUpperCase())} · ${i + 1}/${d.screens.length}</span><img src="/data/${sc.full}" alt="">`, ev.clientX, ev.clientY));
       el.addEventListener("pointerleave", () => Tip.hide());
@@ -947,10 +977,10 @@ const TL = {
       const lh = 34, top = Math.max(1, ...[...wx.wind, ...(wx.gust || [])].filter((v) => v !== null));
       const Y = (v) => lh - 3 - (v / top) * (lh - 7);
       const svg = sv("svg", { viewBox: `0 0 ${this.W} ${lh}`, preserveAspectRatio: "none" },
-        sv("defs", {}, sv("linearGradient", { id: "gw2", x1: 0, y1: 0, x2: 0, y2: 1 }, sv("stop", { offset: "0%", "stop-color": "#5cc6e3", "stop-opacity": 0.3 }), sv("stop", { offset: "100%", "stop-color": "#5cc6e3", "stop-opacity": 0 }))),
+        sv("defs", {}, sv("linearGradient", { id: "gw2", x1: 0, y1: 0, x2: 0, y2: 1 }, sv("stop", { offset: "0%", "stop-color": "#0a8db6", "stop-opacity": 0.3 }), sv("stop", { offset: "100%", "stop-color": "#0a8db6", "stop-opacity": 0 }))),
         sv("path", { d: areaPath(wx.t, wx.wind, X, Y, lh), fill: "url(#gw2)" }),
-        sv("path", { d: linePath(wx.t, wx.wind, X, Y), fill: "none", stroke: "#5cc6e3", "stroke-width": 1.4 }),
-        wx.gust ? sv("path", { d: linePath(wx.t, wx.gust, X, Y), fill: "none", stroke: "#e8b05a", "stroke-width": 1, "stroke-dasharray": "4 3", opacity: 0.85 }) : null);
+        sv("path", { d: linePath(wx.t, wx.wind, X, Y), fill: "none", stroke: "#0a8db6", "stroke-width": 1.4 }),
+        wx.gust ? sv("path", { d: linePath(wx.t, wx.gust, X, Y), fill: "none", stroke: "#d48a0e", "stroke-width": 1, "stroke-dasharray": "4 3", opacity: 0.85 }) : null);
       L.wind.append(svg);
     } else L.wind.append(h("div", { class: "lane-note" }, "no weather data"));
     this.playhead();
@@ -981,6 +1011,15 @@ const Lightbox = {
 };
 
 // ---------- keys, resize, start ----------
+function bindHelp() {
+  const b = $("#helpBtn");
+  if (!b) return;
+  const html = '<b>Keys</b><div class="keys2"><kbd>Space</kbd><span>play / pause</span><kbd>← →</kbd><span>5 s back / forward</span>'
+    + '<kbd>Shift</kbd><span>with ← → : 60 s</span><kbd>Home End</kbd><span>start / end of the activity</span>'
+    + '<kbd>Wheel</kbd><span>zoom the timeline</span><kbd>Dbl-click</kbd><span>fit the activity</span></div>';
+  b.addEventListener("pointerenter", (e) => Tip.show(html, e.clientX - 260, e.clientY + 200));
+  b.addEventListener("pointerleave", () => Tip.hide());
+}
 function bindKeys() {
   window.addEventListener("keydown", (e) => {
     if (e.target.closest && e.target.closest("input, select, textarea")) return;
@@ -1007,6 +1046,9 @@ async function init() {
   S.data = await res.json();
   const d = S.data;
   S.act = d.activity || d.window || [Date.now() - 6e5, Date.now()];
+  const gusts = ((d.weather && d.weather.gust) || []).filter((v) => v !== null);
+  S.maxGust = gusts.length ? Math.max(...gusts) : null;
+  for (const dr of d.drones) dr.ui = ink(dr.color);  // panel colour; the 3D keeps dr.color
   S.full = d.window || S.act.slice();
   S.view = padRange(S.act, 0.04);
   S.t = S.act[0];
@@ -1023,9 +1065,11 @@ async function init() {
   TL.build();
   Lightbox.build();
   bindKeys();
+  bindHelp();
   window.addEventListener("resize", onResize);
   new ResizeObserver(onResize).observe($("#side"));
   refresh(true);
+  window.__hud.R = { refresh, TL, Clock, Atmo, Equip, Intel };  // for timing checks from the console
   requestAnimationFrame(frame);
   const ping = () => fetch("/api/ping", { cache: "no-store" }).catch(() => {});
   ping();

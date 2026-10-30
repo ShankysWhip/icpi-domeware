@@ -24,9 +24,9 @@ import pandas as pd
 from domeware.session import Session
 
 KINDS = ("radar", "operator", "drone_home", "pilot", "weather", "rf", "camera", "sensor", "effector", "other")
-RGB = {"radar": [255, 120, 0], "operator": [255, 160, 60], "drone_home": [235, 235, 235], "pilot": [255, 190, 140],
-       "weather": [70, 160, 255], "rf": [210, 170, 255], "camera": [255, 235, 170], "sensor": [180, 180, 255],
-       "effector": [255, 80, 80], "other": [200, 200, 200]}
+RGB = {"radar": [235, 110, 0], "operator": [215, 125, 20], "drone_home": [95, 110, 130], "pilot": [190, 100, 25],
+       "weather": [30, 140, 220], "rf": [120, 85, 225], "camera": [15, 135, 115], "sensor": [80, 80, 215],
+       "effector": [220, 60, 80], "other": [110, 115, 125]}  # mid-tones: readable on dark and light viewer themes
 DEFAULT_HEIGHT_M = {"drone_home": 0.0, "pilot": 1.7, "operator": 1.5, "rf": 1.5, "weather": 2.0, "camera": 2.0}
 COLUMNS = ["name", "kind", "lat_deg", "lon_deg", "height_m", "heading_deg", "fov_deg", "range_m", "note"]
 KIND_LABEL = {"drone_home": "take-off", "rf": "RF analyser", "weather": "weather station"}
