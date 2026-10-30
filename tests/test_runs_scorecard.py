@@ -185,6 +185,7 @@ def test_detection_share_by_range_and_kml(tmp_path):
     k = kml.build(s)
     xml.dom.minidom.parseString(k)  # valid XML
     assert k.count("<gx:Track>") >= 4 and "drone A_SIMULATED" in k
+    assert "<extrude>1</extrude>" in k and "drone A_SIMULATED path" in k  # height curtain down to the ground
 
 
 def test_timeline_one_row_per_second_with_each_drone(tmp_path):

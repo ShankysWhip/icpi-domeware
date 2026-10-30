@@ -83,3 +83,15 @@ def test_parties_and_wind_are_drawn_in_the_replay(tmp_path):
     assert {p["name"] for p in stats["parties"]} == {"SIM radar", "SIM M400 take-off", "Weather SIMWXT", "EO camera"}
     assert stats["wind_arrow_s"] == 241  # 09:01:00 .. 09:05:00 every second (2 min before the activity)
     assert any("EO camera" in line and "camera" in line for line in legend)
+
+
+def test_google_earth_file_shows_the_parties_before_any_drone_data(tmp_path):
+    import xml.dom.minidom
+
+    from domeware import kml
+
+    s = _session(tmp_path)
+    k = kml.build(s)
+    xml.dom.minidom.parseString(k)
+    assert "<name>Parties</name>" in k and "SIM M400 take-off" in k and "Weather SIMWXT" in k
+    assert k.count("<name>500 m</name>") == 1 and "<gx:Track>" not in k

@@ -36,6 +36,8 @@ ALARM_RGB = [230, 40, 40]
 # one colour per drone, kept apart from the radar class colours above; a radar track that was a drone wears its colour
 DRONE_RGB = [[0, 230, 90], [255, 60, 200], [0, 210, 230], [240, 220, 40], [160, 90, 255], [150, 255, 60],
              [255, 150, 190], [0, 160, 140], [255, 255, 255], [200, 120, 60]]
+TREES_NEAR_M = 1200.0  # tree tops are drawn only this close to the radar
+CURTAIN_STEP_S = 2.0  # one vertical line from a drone path to the ground every 2 s
 DRONE_COLOUR_NAMES = ["green", "magenta", "cyan", "yellow", "purple", "lime", "pink", "teal", "white", "brown"]
 
 
@@ -59,8 +61,8 @@ def enu(lat, lon, h, lat0, lon0, h0):
     return e, nn, u
 
 
-def terrain_glb(s: Session, site: dict, inner_half_m: float = 1200.0, inner_step_m: float = 4.0,
-                outer_step_m: float = 10.0):
+def terrain_glb(s: Session, site: dict, inner_half_m: float = 1200.0, inner_step_m: float = 6.0,
+                outer_step_m: float = 20.0):
     """Two-level terrain: a fine tile around the radar (where the action is) inside a coarser outer tile.
 
     Returns ([(name, glb_bytes), ...], info). Heights are aligned to the radar's own declared ground level.
@@ -184,17 +186,19 @@ def log_features(rec, s: Session, site: dict, stats: dict) -> None:
         if strips:
             rec.log("world/power_lines", rr.LineStrips3D(strips, colors=[[250, 220, 60]], radii=0.5), static=True)
             stats["power_line_strips"] = len(strips)
-    pts = canopy_points(s)
+    pts = canopy_points(s, spacing_m=16.0, min_h=5.0)  # the photo already shows the forest; points only add height
     if pts is not None and len(pts[0]):
         x, y, h = pts
         pos = _tm_to_enu(x, y, ground(x, y) + h, site)
+        near = np.hypot(pos[:, 0], pos[:, 1]) < TREES_NEAR_M  # 470 000 points over 6 km made the viewer stutter
+        pos, h = pos[near], h[near]
         t = np.clip(h / 30.0, 0, 1)[:, None]
         colors = (np.array([[110, 160, 70]]) * (1 - t) + np.array([[25, 75, 35]]) * t).astype(np.uint8)
-        rec.log("world/trees", rr.Points3D(pos, colors=colors, radii=2.2), static=True)
+        rec.log("world/trees", rr.Points3D(pos, colors=colors, radii=4.0), static=True)
         stats["tree_points"] = int(len(pos))
 
 
-def log_los(rec, s: Session, site: dict, stats: dict, spacing_m: float = 20.0) -> None:
+def log_los(rec, s: Session, site: dict, stats: dict, spacing_m: float = 40.0) -> None:
     """MODELLED line of sight as coloured ground dots: green = visible near the ground, red = needs > 50 m."""
     p = s.env / "los_min_agl.tif"
     if not p.exists():
@@ -249,6 +253,23 @@ def unique_stem(f: Path, others: list[Path]) -> str:
         i = len(parts) - 1 - parts[::-1].index("raw")
         return "_".join(f.with_suffix("").parts[i + 2:])
     return f"{f.parent.name}_{f.stem}"
+
+
+def _curtain(s: Session, d: pd.DataFrame) -> np.ndarray | None:
+    """Vertical segments from a drone path down to the terrain, one every CURTAIN_STEP_S; None without lat/lon or DEM."""
+    if not {"lat_deg", "lon_deg"} <= set(d.columns) or not (s.env / "dem.tif").exists():
+        return None
+    from domeware.convert import terrain_alignment_m
+
+    k = d.dropna(subset=["lat_deg", "lon_deg"])
+    k = k.groupby(pd.to_datetime(k["t_utc"], utc=True).dt.floor(f"{CURTAIN_STEP_S:g}s")).first()
+    if k.empty:
+        return None
+    site = s.manifest["site"]
+    x, y = LL_TO_TM35.transform(k["lon_deg"].to_numpy(), k["lat_deg"].to_numpy())
+    g = _tm_to_enu(x, y, _dem_lookup(s, terrain_alignment_m(s))(x, y), site)
+    top = k[["e_m", "n_m", "u_m"]].to_numpy(np.float32)
+    return np.stack([top, g], axis=1)
 
 
 def _ts(series: pd.Series) -> np.ndarray:
@@ -398,6 +419,10 @@ def build(s: Session) -> dict:
         rec.send_columns(f"world/truth/{name}", indexes=[t], columns=rr.Points3D.columns(positions=pos).partition([1] * len(pos)))
         rec.log(f"world/truth/{name}", rr.Points3D.from_fields(colors=[rgb], radii=2.5, labels=[name], show_labels=True), static=True)
         rec.log(f"world/truth/{name}_path", rr.LineStrips3D([pos], colors=[rgb], radii=0.4), static=True)
+        curtain = _curtain(s, d)
+        if curtain is not None:  # height over the ground at a glance, as Google Earth's extruded paths
+            rec.log(f"world/truth/{name}_curtain", rr.LineStrips3D(list(curtain), colors=[[*rgb, 110]], radii=0.15),
+                    static=True)
         for lane, v in ((f"plots/range_m/drone {name}", np.hypot(d["e_m"], d["n_m"]).to_numpy()),
                         (f"plots/drone_height_m/{name}", d["h_rel_takeoff_m"].to_numpy(np.float64) if "h_rel_takeoff_m" in d else None)):
             if v is not None:
@@ -484,12 +509,14 @@ def build(s: Session) -> dict:
     trail = rrb.VisibleTimeRange("utc", start=rrb.TimeRangeBoundary.cursor_relative(seconds=-20.0),
                                  end=rrb.TimeRangeBoundary.cursor_relative())
     chase = [rrb.Spatial3DView(name=f"Chase track {fid}", origin="/world", time_ranges=[trail],
+                               contents=["+ /world/**", "- /world/los_MODELLED/**"],
                                eye_controls=rrb.EyeControls3D(kind=rrb.Eye3DKind.Orbital,
                                                               tracking_entity=f"/world/tracks/focus_{fid}"))
              for fid in focus_ids[:1]]
     bp = rrb.Blueprint(
         rrb.Horizontal(
-            rrb.Vertical(rrb.Spatial3DView(name="Site", origin="/world", time_ranges=[trail]), *chase,
+            rrb.Vertical(rrb.Spatial3DView(name="Site", origin="/world", time_ranges=[trail],
+                                           contents=["+ /world/**", "- /world/los_MODELLED/**"]), *chase,
                          *[rrb.Spatial2DView(name=p.split("/", 1)[1], origin=f"/{p}") for p in video_paths],
                          *[rrb.Spatial2DView(name=f"Screens: {p.split('/', 1)[1]}", origin=f"/{p}") for p in picture_paths]),
             rrb.Vertical(rrb.TimeSeriesView(name="Range from radar (m)", origin="/plots/range_m"),

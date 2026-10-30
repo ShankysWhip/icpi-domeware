@@ -3,10 +3,13 @@
 Drones are drawn in the replay's colours; a radar track that was a drone is drawn in that drone's colour, other
 tracks in grey. Heights: drones above their take-off ground (clamped to the terrain Google Earth shows), radar tracks
 at the altitude the radar reports. Thinned to one point per second to keep the file small.
+Each drone's whole path is also drawn with a see-through curtain down to the ground, so its height reads at a glance;
+everyone at the test (dw parties) is a named pin, and the radar has range rings.
 """
 
 from __future__ import annotations
 
+import math
 from xml.sax.saxutils import escape
 
 import pandas as pd
@@ -33,6 +36,47 @@ def _track(name: str, d: pd.DataFrame, alt_col: str | None, rgb, mode: str) -> s
             f"<gx:Track><altitudeMode>{mode}</altitudeMode>{whens}{coords}</gx:Track></Placemark>")
 
 
+def _curtain(name: str, d: pd.DataFrame, rgb) -> str:
+    d = d.dropna(subset=["lat_deg", "lon_deg", "h_rel_takeoff_m"]).copy()
+    d["t_utc"] = pd.to_datetime(d["t_utc"], utc=True)
+    d = d.sort_values("t_utc").groupby(d["t_utc"].dt.floor("1s")).first()
+    if d.empty:
+        return ""
+    coords = " ".join(f"{lo:.7f},{la:.7f},{h:.1f}" for lo, la, h in zip(d["lon_deg"], d["lat_deg"], d["h_rel_takeoff_m"], strict=True))
+    return (f"<Placemark><name>{escape(name)} path</name><Style><LineStyle><color>{_abgr(rgb)}</color><width>2</width>"
+            f"</LineStyle><PolyStyle><color>{_abgr(rgb, 70)}</color></PolyStyle></Style><LineString><extrude>1</extrude>"
+            f"<tessellate>1</tessellate><altitudeMode>relativeToGround</altitudeMode><coordinates>{coords}</coordinates>"
+            f"</LineString></Placemark>")
+
+
+def _parties(s: Session) -> str:
+    from domeware.parties import load
+
+    df, _ = load(s)
+    pins = []
+    for r in df.itertuples():
+        desc = f"{r.kind}; {r.height_m:.1f} m above ground{' (assumed)' if r.height_assumed else ''}; source: {r.source}"
+        if isinstance(r.note, str) and r.note:
+            desc += f". {r.note}"
+        pins.append(f"<Placemark><name>{escape(r.name)}</name><description>{escape(desc)}</description>"
+                    f"<Point><coordinates>{r.lon_deg:.7f},{r.lat_deg:.7f},0</coordinates></Point></Placemark>")
+    return f"<Folder><name>Parties</name>{''.join(pins)}</Folder>" if pins else ""
+
+
+def _rings(site: dict) -> str:
+    out = []
+    for r_m in (500, 1000, 2000, 3000):
+        pts = []
+        for i in range(121):
+            a = 2 * math.pi * i / 120
+            pts.append(f"{site['lon_deg'] + r_m * math.sin(a) / (111320 * math.cos(math.radians(site['lat_deg']))):.7f},"
+                       f"{site['lat_deg'] + r_m * math.cos(a) / 110574:.7f},0")
+        out.append(f"<Placemark><name>{r_m} m</name><Style><LineStyle><color>b4ffffff</color><width>1</width></LineStyle>"
+                   f"</Style><LineString><tessellate>1</tessellate><coordinates>{' '.join(pts)}</coordinates>"
+                   f"</LineString></Placemark>")
+    return f"<Folder><name>Radar range rings</name>{''.join(out)}</Folder>"
+
+
 def build(s: Session) -> str | None:
     site = s.manifest.get("site")
     parts, owner = [], {}
@@ -47,6 +91,7 @@ def build(s: Session) -> str | None:
         d = read_truth(f)
         if {"lat_deg", "lon_deg", "h_rel_takeoff_m"} <= set(d.columns):
             parts.append(_track(f"drone {f.stem}", d, "h_rel_takeoff_m", colour[f.stem], "relativeToGround"))
+            parts.append(_curtain(f"drone {f.stem}", d, colour[f.stem]))
     for name in s.manifest["streams"]:
         tp = s.streams / name / "tracks.parquet"
         if not tp.exists():
@@ -58,13 +103,12 @@ def build(s: Session) -> str | None:
                 continue
             parts.append(_track(f"radar track {tid}" + (f" = {mine}" if mine else ""), g, "alt_m",
                                 colour.get(mine, [150, 150, 150]), "absolute"))
-    if not any(parts):
+    if not site and not any(parts):
         return None
-    radar = (f"<Placemark><name>{escape(site.get('name') or 'radar')}</name><Point><coordinates>{site['lon_deg']:.7f},"
-             f"{site['lat_deg']:.7f},0</coordinates></Point></Placemark>") if site else ""
+    around = (_parties(s) + _rings(site)) if site else ""
     kml = ('<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2" '
            'xmlns:gx="http://www.google.com/kml/ext/2.2"><Document>'
-           f"<name>{escape(s.root.name)}</name>{radar}{''.join(parts)}</Document></kml>")
+           f"<name>{escape(s.root.name)}</name>{around}{''.join(parts)}</Document></kml>")
     s.views.mkdir(parents=True, exist_ok=True)
     (s.views / "session.kml").write_text(kml, encoding="utf-8")
     s.note(f"kml: views/session.kml ({sum(1 for p in parts if p)} paths) - open in Google Earth, use the time slider")
