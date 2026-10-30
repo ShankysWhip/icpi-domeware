@@ -471,6 +471,19 @@ function areaPath(ts, vs, X, Y, y0) {
   flush();
   return d;
 }
+function bandPath(ts, lo, hi, X, Y) {  // the area between two series, only where both have a value
+  let d = "", run = [];
+  const flush = () => {
+    if (run.length > 1) d += `M${run.map(([x, , y]) => `${x},${y}`).join("L")}L${run.slice().reverse().map(([x, y]) => `${x},${y}`).join("L")}Z`;
+    run = [];
+  };
+  for (let i = 0; i < ts.length; i++) {
+    if (lo[i] === null || hi[i] === null || lo[i] === undefined || hi[i] === undefined) { flush(); continue; }
+    run.push([X(ts[i]).toFixed(1), Y(lo[i]).toFixed(1), Y(hi[i]).toFixed(1)]);
+  }
+  flush();
+  return d;
+}
 const Atmo = {
   build() {
     const root = $("#tabAtmo");
@@ -563,6 +576,9 @@ const Atmo = {
     if (S.wx.wind && wx.wind) {
       svg.append(sv("path", { d: areaPath(wx.t, wx.wind, X, Y, pt + ih), fill: "url(#gWind)" }));
       svg.append(sv("path", { d: linePath(wx.t, wx.wind, X, Y), fill: "none", stroke: "#0a8db6", "stroke-width": 2 }));
+    }
+    if (S.wx.wind && S.wx.gust && wx.wind && wx.gust) {  // how gusty: the band between wind and gust
+      svg.append(sv("path", { d: bandPath(wx.t, wx.wind, wx.gust, X, Y), fill: "#d48a0e", opacity: 0.13 }));
     }
     if (S.wx.gust && wx.gust) svg.append(sv("path", { d: linePath(wx.t, wx.gust, X, Y), fill: "none", stroke: "#d48a0e", "stroke-width": 1.5, "stroke-dasharray": "5 3" }));
     this.rs = {};
@@ -862,7 +878,7 @@ const TL = {
         tr("+10 s", "Forward 10 s (→ 5 s)", () => seek(S.t + 10000)), tr("▶|", "End of the activity (End)", () => seek(S.act[1]))),
       h("div", { class: "speed-row" }, this.speed, this.loop)));
     const n = S.data.drones.length;
-    LANES.find((l) => l.key === "drones").h = n ? clamp(n * 9 + 10, 24, 66) : 24;
+    LANES.find((l) => l.key === "drones").h = n ? clamp(n * (n <= 8 ? 14 : 9) + 10, 28, 72) : 24;  // room for height profiles
     this.labels = h("div", { class: "tl-labels" });
     this.track = h("div", { class: "tl-track" });
     this.grid = h("div", { style: "position:absolute;inset:0;pointer-events:none" });
@@ -960,6 +976,22 @@ const TL = {
     // drones
     if (d.drones.length) {
       const n = d.drones.length, lh = LANES.find((l) => l.key === "drones").h, rowH = (lh - 6) / n;
+      if (n <= 8) {  // each drone's height as a faint profile in its own row, under the radar bars
+        const top = Math.max(1, ...d.drones.flatMap((dr) => (dr.series.height || []).filter((v) => v !== null)));
+        const prof = sv("svg", { viewBox: `0 0 ${this.W} ${lh}`, preserveAspectRatio: "none" });
+        d.drones.forEach((dr, i) => {
+          const hs = dr.series.height, ts = dr.series.t;
+          if (!hs) return;
+          const y0 = 3 + (i + 1) * rowH - 1, span = rowH - 2;
+          const i0 = Math.max(0, Math.floor((v0 - ts[0]) / 1000)), i1 = Math.min(ts.length - 1, Math.ceil((v1 - ts[0]) / 1000));
+          const stepI = Math.max(1, Math.ceil((i1 - i0) / (this.W / 2)));
+          const sub = { t: [], h: [] };
+          for (let k = i0; k <= i1; k += stepI) { sub.t.push(ts[k]); sub.h.push(hs[k]); }
+          prof.append(sv("path", { d: areaPath(sub.t, sub.h, X, (v) => y0 - (v / top) * span, y0), fill: dr.ui, opacity: 0.16 }));
+          prof.append(sv("path", { d: linePath(sub.t, sub.h, X, (v) => y0 - (v / top) * span), fill: "none", stroke: dr.ui, "stroke-width": 1, opacity: 0.55 }));
+        });
+        L.drones.append(prof);
+      }
       d.drones.forEach((dr, i) => {
         const y = 3 + i * rowH + rowH / 2;
         for (const [a, b] of dr.flying) {

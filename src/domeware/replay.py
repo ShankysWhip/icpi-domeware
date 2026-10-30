@@ -398,7 +398,8 @@ def _log_now(rec, s: Session, span, truths: dict, errs: dict, has_radar: bool) -
     if not truths and w is None:
         return False
     step = "1s" if truths else "1min"
-    g = pd.DataFrame({"t_utc": pd.date_range(span[0].floor(step), span[1], freq=step, unit="ns")})
+    lead = pd.Timedelta("15min")  # from where the timeline starts (weather is kept this far around the activity)
+    g = pd.DataFrame({"t_utc": pd.date_range((span[0] - lead).floor(step), span[1] + lead, freq=step, unit="ns")})
     if w is not None:
         w["t_utc"] = pd.to_datetime(w["t_utc"], utc=True).dt.as_unit("ns")
         g = pd.merge_asof(g, w.sort_values("t_utc"), on="t_utc", direction="backward", tolerance=pd.Timedelta("2min"))
@@ -497,6 +498,12 @@ def build(s: Session) -> dict:
     rings = [np.column_stack([r * np.sin(th), r * np.cos(th), np.full_like(th, ground_z)]) for r in (500, 1000, 2000, 3000)]
     rec.log("world/radar/range_rings", rr.LineStrips3D(rings, colors=[[255, 160, 60]], radii=0.6,
                                                        labels=["500 m", "1 km", "2 km", "3 km"]), static=True)
+    # a north arrow on the ground at the radar: which way is which from any camera angle
+    rec.log("world/radar/north", rr.LineStrips3D(
+        [[[0, 60, ground_z], [0, 190, ground_z]], [[-16, 166, ground_z], [0, 190, ground_z], [16, 166, ground_z]]],
+        colors=[[235, 110, 0]], radii=1.6), static=True)
+    rec.log("world/radar/north/label", rr.Points3D([[0, 205, ground_z]], colors=[[235, 110, 0]], radii=0.5, labels=["N"],
+                                                   show_labels=True), static=True)
 
     events: list[tuple[pd.Timestamp, str]] = []
     focus_ids = []

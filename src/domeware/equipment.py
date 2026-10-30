@@ -30,6 +30,7 @@ RGB = {"radar": [235, 110, 0], "operator": [215, 125, 20], "drone_home": [95, 11
 DEFAULT_HEIGHT_M = {"drone_home": 0.0, "pilot": 1.7, "operator": 1.5, "rf": 1.5, "weather": 2.0, "camera": 2.0}
 COLUMNS = ["name", "kind", "lat_deg", "lon_deg", "height_m", "heading_deg", "fov_deg", "range_m", "note"]
 KIND_LABEL = {"drone_home": "take-off", "rf": "RF analyser", "weather": "weather station"}
+LABEL_NEAR_M, LABEL_STEP_M = 60.0, 10.0  # labels closer than this to one already drawn go up by a step each
 WIND_M_PER_MS = 10.0  # arrow length in the replay: 10 m per 1 m/s of wind
 
 
@@ -138,6 +139,7 @@ def log_equipment(rec, s: Session, site: dict, span: tuple[pd.Timestamp, pd.Time
     ground = _ground_heights(s, site, df)
     rows, notes, assumed = [], [], False
     homes = int((df["kind"] == "drone_home").sum())  # a swarm's take-offs side by side: one label for all of them
+    placed = [(0.0, 0.0)]  # labels already drawn (the radar's at the origin); close ones are lifted to stay readable
     for r, g in zip(df.itertuples(), ground, strict=True):
         e, n, u = (float(v) for v in enu(r.lat_deg, r.lon_deg, g + r.height_m, site["lat_deg"], site["lon_deg"], site["alt_m"]))
         _, _, u0 = (float(v) for v in enu(r.lat_deg, r.lon_deg, g, site["lat_deg"], site["lon_deg"], site["alt_m"]))
@@ -152,7 +154,15 @@ def log_equipment(rec, s: Session, site: dict, span: tuple[pd.Timestamp, pd.Time
         crowd = r.kind == "drone_home" and homes > 3
         label = f"take-offs ({homes} drones)" if crowd else r.name
         first = not crowd or r.Index == df.index[df["kind"] == "drone_home"][0]
-        rec.log(path, rr.Points3D([[e, n, u]], colors=[rgb], radii=2.5, labels=[label], show_labels=first), static=True)
+        rec.log(path, rr.Points3D([[e, n, u]], colors=[rgb], radii=2.5), static=True)
+        if first:  # the label stands on a thin leader, higher for each label already near it, so none hide another
+            lift = LABEL_STEP_M * sum(1 for pe, pn in placed if np.hypot(e - pe, n - pn) < LABEL_NEAR_M)
+            placed.append((e, n))
+            rec.log(f"{path}/label", rr.Points3D([[e, n, u + lift]], colors=[rgb], radii=0.6, labels=[label],
+                                                 show_labels=True), static=True)
+            if lift:
+                rec.log(f"{path}/leader", rr.LineStrips3D([[[e, n, u], [e, n, u + lift]]], colors=[[*rgb, 170]], radii=0.12),
+                        static=True)
         th = np.linspace(0, 2 * np.pi, 49)
         ring = np.column_stack([e + 8 * np.sin(th), n + 8 * np.cos(th), np.full_like(th, u0 + 0.3)])
         strips = [ring, [[e, n, u0], [e, n, u]]] if r.height_m > 0.3 else [ring]
