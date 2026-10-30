@@ -163,7 +163,9 @@ def export(s: Session, *, site: dict, span, truths: dict, errs: dict, tracks: pd
                            "speed": _vals(k["speed"]), "err": _vals(err)},
                 "flying": _segments(t_ms, fly), "tracked": _segments(t_ms, seen), "tracks": mine,
                 "tracked_share": round(float(seen.sum() / fly.sum()), 3) if fly.any() and len(tracks) else None,
-                "err_median_m": round(float(np.nanmedian(err[seen])), 1) if seen.any() else None})
+                # over every radar update, as dw compare and the report do (not the 1 s grid): one number everywhere
+                "err_median_m": (round(float(errs[name]["err_m"].median()), 1) if name in errs and len(errs[name])
+                                 else None)})
     radar = None
     if len(tracks) and window is not None:
         tt = pd.to_datetime(tracks["t_utc"], utc=True)
