@@ -51,6 +51,8 @@ def read_dji_srt(path: Path, tz: str = LOCAL_TZ) -> tuple[pd.DataFrame, dict]:
     t = pd.to_datetime(df["t_local"], format="mixed").dt.tz_localize(ZoneInfo(tz), ambiguous="NaT")
     df["t_utc"] = t.dt.tz_convert("UTC")
     df = df[(df["lat_deg"] != 0) & (df["lon_deg"] != 0)].dropna(subset=["t_utc"])
+    if df.empty:
+        raise ValueError(f"{path.name}: every caption has latitude/longitude 0 (recorded before GPS lock or indoors)")
     df = df.drop_duplicates("t_utc").sort_values("t_utc")
     meta = {"time_method": f"SRT caption local time, zone {tz} (DST-aware)", "rows": len(df), "skipped_blocks": skipped,
             "height_note": "rel_alt = height above take-off (DJI barometric); abs_alt kept as dji_abs_alt_m, unused"}
@@ -157,7 +159,7 @@ def read_rtklib_pos(path: Path) -> tuple[pd.DataFrame, dict]:
     lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
     head = [ln for ln in lines if ln.startswith("%")]
     gpst = not any("UTC" in ln for ln in head[-1:])
-    if any("geoid" in ln.lower() for ln in head):
+    if any("geoid" in ln.lower() or ("height=" in ln.lower() and "geodetic" in ln.lower()) for ln in head):
         raise ValueError(f"{path.name}: geoid heights in .pos; export ellipsoidal heights (RTKLIB default)")
     rows, bad = [], 0
     for ln in lines:

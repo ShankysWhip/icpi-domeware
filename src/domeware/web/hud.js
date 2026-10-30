@@ -79,6 +79,7 @@ function droneAt(d, key, t) {  // drone series are one value per second from ser
   const i = Math.round((t - d.series.t[0]) / 1000);
   return i >= 0 && i < v.length ? v[i] : null;
 }
+const inFlight = (d, t) => d.flying.some(([a, b]) => t >= a - 500 && t <= b + 500);  // as dw compare counts flight
 const STEPS = [1e3, 2e3, 5e3, 1e4, 15e3, 3e4, 6e4, 12e4, 3e5, 6e5, 9e5, 18e5, 36e5, 72e5, 108e5, 216e5];
 const niceStep = (raw) => STEPS.find((s) => s >= raw) || STEPS[STEPS.length - 1];
 const RINGS = [20, 40, 60, 80, 100, 120, 160, 200, 300, 400, 600, 800, 1000, 1200, 1600, 2000, 2400, 3000, 4000, 6000, 8000, 12000];
@@ -362,7 +363,7 @@ const Clock = {
       this.tile(c.gust, gust === null ? "—" : `${fx(gust)}<small>m/s</small>`, S.maxGust !== null ? `max ${fx(S.maxGust)} m/s` : "");
       this.tile(c.temp, temp === null ? "—" : `${fx(temp)}<small>°C</small>`, rh === null ? "" : `humidity ${fx(rh, 0)} %`);
       if (d.drones.length) {
-        const up = d.drones.filter((x) => droneAt(x, "e", t) !== null);
+        const up = d.drones.filter((x) => inFlight(x, t));
         const held = up.filter((x) => droneAt(x, "err", t) !== null);
         this.tile(c.air, `${up.length}<small>/ ${d.drones.length}</small>`, "drones in the air", up.length ? "ok" : "");
         if (d.radar) this.tile(c.radar, up.length ? `${held.length}<small>/ ${up.length}</small>` : "—", "tracked by the radar", up.length ? (held.length === up.length ? "ok" : "bad") : "");
@@ -376,7 +377,7 @@ const Clock = {
       this.tile(c.ev, `${past.length}<small>/ ${d.events.length}</small>`, past.length ? past[past.length - 1].text : "none yet");
     } else if (S.mode === "drones" && d.drones.length) {
       for (const dr of d.drones) {
-        const cc = c[dr.name], up = droneAt(dr, "e", t) !== null, err = droneAt(dr, "err", t);
+        const cc = c[dr.name], up = inFlight(dr, t), err = droneAt(dr, "err", t);
         cc.row.classList.toggle("sel", S.drone === dr.name);
         cc.range.textContent = up ? dist(droneAt(dr, "range", t)) : "—";
         cc.alt.textContent = up ? `${fx(droneAt(dr, "height", t), 0)} m` : "—";
@@ -933,7 +934,10 @@ const TL = {
   playhead() {
     if (!this.W) return;
     const [a, b] = S.view, span = b - a;
-    if (S.playing && (S.t > b - span * 0.04 || S.t < a)) { this.setView([S.t - span * 0.12, S.t - span * 0.12 + span]); return; }
+    if (S.playing && (S.t > b - span * 0.04 || S.t < a)) {
+      const na = clamp(S.t - span * 0.12, S.full[0], S.full[1] - span);
+      if (Math.abs(na - a) > 1) { this.setView([na, na + span]); return; }  // at the end of the data the view stays put
+    }
     const x = this.x(S.t), inside = S.t >= a && S.t <= b;
     this.ph.style.display = inside ? "" : "none";
     this.ph.style.transform = `translateX(${x}px)`;
@@ -1152,6 +1156,8 @@ async function init() {
   const ping = () => fetch("/api/ping", { cache: "no-store" }).catch(() => {});
   ping();
   setInterval(ping, 5000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) ping(); });
+  window.addEventListener("pagehide", () => { try { navigator.sendBeacon("/api/bye"); } catch { /* best effort */ } });
   startViewer().catch((err) => { console.error(err); setLoad(`the 3D viewer did not start: ${err && err.message ? err.message : err}`, true); });
 }
 init();

@@ -164,6 +164,9 @@ def convert_truth(s: Session) -> None:
         except Exception as e:  # one bad file must not stop the others; the reason is recorded
             s.note(f"truth: {f.name}: NOT converted: {e}")
             continue
+        if df_all is None or df_all.empty:
+            s.note(f"truth: {f.name}: NOT converted: no positions")
+            continue
         # one stream per vehicle: a ground-station log can hold the whole swarm
         groups = df_all.groupby("vehicle_id") if "vehicle_id" in df_all else [(None, df_all)]
         from domeware.replay import unique_stem

@@ -60,6 +60,16 @@ def _mode_names(vehicle: str) -> dict[int, str]:
     return {v: k for k, v in table.items()}
 
 
+def _drain(log, types: list[str]) -> list:
+    """Every message of these types, and the log closed afterwards even on an error (an open log stays locked)."""
+    from domeware.adapters.truth import _close
+
+    try:
+        return list(iter(lambda: log.recv_match(type=types), None))
+    finally:
+        _close(log)
+
+
 def from_ardupilot_bin(path: Path) -> tuple[list[dict], str]:
     from pymavlink import DFReader
 
@@ -67,7 +77,7 @@ def from_ardupilot_bin(path: Path) -> tuple[list[dict], str]:
 
     log = DFReader.DFReader_binary(str(path), zero_time_base=True)
     offsets, raw, vehicle = [], [], "copter"
-    while (m := log.recv_match(type=["GPS", "MODE", "EV", "ERR", "MSG"])) is not None:
+    for m in _drain(log, ["GPS", "MODE", "EV", "ERR", "MSG"]):
         d, typ = m.to_dict(), m.get_type()
         if typ == "GPS":
             if d.get("I", 0) == 0 and d.get("Status", 0) >= 3 and d.get("GWk"):
@@ -105,7 +115,7 @@ def from_mavlink_tlog(path: Path) -> tuple[list[dict], str]:
     mlog = mavutil.mavlink_connection(str(path), dialect="ardupilotmega")
     last: dict[int, tuple] = {}
     out = []
-    while (m := mlog.recv_match(type=["HEARTBEAT", "STATUSTEXT"])) is not None:
+    for m in _drain(mlog, ["HEARTBEAT", "STATUSTEXT"]):
         sysid, t = m.get_srcSystem(), pd.Timestamp(getattr(m, "_timestamp", 0), unit="s", tz="UTC")
         drone = f"{path.stem}_sys{sysid}"
         if m.get_type() == "HEARTBEAT":

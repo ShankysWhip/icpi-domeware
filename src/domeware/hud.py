@@ -35,6 +35,7 @@ from domeware.session import Session
 WEB = Path(__file__).parent / "web"
 MARGIN = pd.Timedelta("15min")  # the replay keeps weather this far around the activity
 DATA_FILES = {"replay.rrd", "replay_hud.rbl"}
+AIRBORNE_M = 2.0  # as dw compare: airborne from the first to the last moment above 2 m over take-off
 TZ_LOCAL = "Europe/Helsinki"
 
 
@@ -60,6 +61,18 @@ def _segments(t_ms: np.ndarray, ok: np.ndarray, gap_ms: int = 2500) -> list[list
             out[-1][1] = int(t)
         else:
             out.append([int(t), int(t)])
+    return out
+
+
+def _airborne(has_fix: np.ndarray, height: np.ndarray | None) -> np.ndarray:
+    """Seconds in flight, as dw compare counts them: from the first to the last second above AIRBORNE_M. A log that
+    runs on the ground before take-off or after landing must not count as flying (or as 'radar lost')."""
+    if height is None:
+        return has_fix
+    above = np.flatnonzero(np.nan_to_num(height, nan=-1.0) > AIRBORNE_M)
+    out = np.zeros(len(has_fix), dtype=bool)
+    if len(above):
+        out[above[0]:above[-1] + 1] = True
     return out
 
 
@@ -113,18 +126,19 @@ def _weather(s: Session, window) -> dict | None:
 
 def _screens(s: Session, out: Path) -> list[dict]:
     """Every timed picture as a small thumbnail (timeline) and a large copy (viewer); the raw file stays untouched."""
-    from PIL import Image
+    from PIL import Image, ImageOps
 
+    from domeware.equipment import _slug
     from domeware.images import pictures
 
     shots = sorted((p for p in pictures(s) if p["t_utc"] is not None), key=lambda p: p["t_utc"])
     out.mkdir(parents=True, exist_ok=True)
     res = []
     for i, p in enumerate(shots):
-        stem = f"{i:03d}_{p['group']}"
+        stem = f"{i:03d}_{_slug(p['group'])}"
         try:
             with Image.open(p["file"]) as im:
-                im = im.convert("RGB")
+                im = ImageOps.exif_transpose(im).convert("RGB")  # a portrait phone photo stays upright
                 big = im.copy()
                 big.thumbnail((1600, 1200))
                 big.save(out / f"{stem}.jpg", quality=86)
@@ -151,7 +165,8 @@ def export(s: Session, *, site: dict, span, truths: dict, errs: dict, tracks: pd
         grid = pd.Series(pd.date_range(span[0].floor("1s"), span[1].ceil("1s"), freq="1s", unit="ns"))
         t_ms = (grid.astype("int64") // 1_000_000).to_numpy()
         for name, k in drone_frames(grid, truths, errs).items():
-            fly = k["e_m"].notna().to_numpy()
+            fly = _airborne(k["e_m"].notna().to_numpy(),
+                            k["h_rel_takeoff_m"].to_numpy(float) if "h_rel_takeoff_m" in k else None)
             err = k["err_m"].to_numpy(float) if "err_m" in k else np.full(len(k), np.nan)
             seen = np.isfinite(err) & fly
             mine = sorted(int(tid) for tid, d in owner.items() if d == name)
@@ -232,7 +247,8 @@ def make_server(s: Session, port: int = 0) -> tuple[ThreadingHTTPServer, str, di
     """A server for one session on 127.0.0.1. Serves the page, the viewer files and this session's replay only."""
     viewer = _web_viewer()
     roots = {"/app/": WEB.resolve(), "/viewer/": viewer.resolve(), "/data/": s.views.resolve()}
-    state = {"last": time.monotonic(), "pinged": False}
+    state = {"last": time.monotonic(), "pinged": False, "bye": None}
+    data_ok = {roots["/data/"] / f for f in DATA_FILES}
     types = {".wasm": "application/wasm", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css",
              ".html": "text/html; charset=utf-8", ".json": "application/json", ".rrd": "application/octet-stream",
              ".rbl": "application/octet-stream", ".jpg": "image/jpeg", ".png": "image/png", ".svg": "image/svg+xml"}
@@ -251,6 +267,14 @@ def make_server(s: Session, port: int = 0) -> tuple[ThreadingHTTPServer, str, di
             with f.open("rb") as fh:
                 shutil.copyfileobj(fh, self.wfile, 1 << 20)
 
+        def do_POST(self):  # noqa: N802
+            if urllib.parse.urlsplit(self.path).path == "/api/bye":  # the window is closing (or reloading)
+                state["bye"] = time.monotonic()
+                self.send_response(204)
+                self.end_headers()
+                return
+            self.send_error(404)
+
         def do_GET(self):  # noqa: N802
             path = urllib.parse.urlsplit(self.path).path
             try:
@@ -265,9 +289,11 @@ def make_server(s: Session, port: int = 0) -> tuple[ThreadingHTTPServer, str, di
                     if not path.startswith(prefix):
                         continue
                     rel = urllib.parse.unquote(path[len(prefix):])
-                    if prefix == "/data/" and not (rel in DATA_FILES or rel.startswith("hud/")):
-                        break
+                    if "\\" in rel or ":" in rel or rel.startswith("/") or "\x00" in rel:
+                        break  # never let a request name a drive, a share or an absolute path
                     f = (base / rel).resolve()
+                    if prefix == "/data/" and not (f in data_ok or f.is_relative_to(roots["/data/"] / "hud")):
+                        break  # checked after resolving: hud/..%2f must not reach the rest of views/
                     if prefix == "/viewer/" and not f.exists() and f.with_name(f.name + ".js").exists():
                         f = f.with_name(f.name + ".js")  # the viewer imports "./re_viewer" without the extension
                     if f.is_relative_to(base) and f.is_file():
@@ -305,13 +331,18 @@ def serve(s: Session, port: int = 0, open_window: bool = True, play: bool = Fals
     server, url, state = make_server(s, port)
     url += "?play=1" if play else ""
 
-    def watchdog():  # stop ~45 s after the window stops asking, or after 5 min if it never came
+    def watchdog():
+        """Stop 15 s after the window says bye (unless it was a reload), 3 min after the last ping (a hidden or
+        minimised window still pings about once a minute), or 5 min after start if no window ever came."""
         while True:
             time.sleep(5)
-            idle = time.monotonic() - state["last"]
-            if idle > (45 if state["pinged"] else 300):
-                server.shutdown()
-                return
+            now = time.monotonic()
+            bye = state["bye"]
+            if bye is not None and now - bye > 15 and state["last"] < bye:
+                break
+            if now - state["last"] > (180 if state["pinged"] else 300):
+                break
+        server.shutdown()
 
     threading.Thread(target=watchdog, daemon=True).start()
     print(f"HUD for {s.root.name}: {url}  (this computer only; stops by itself when the window is closed)")

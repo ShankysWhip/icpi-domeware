@@ -50,5 +50,21 @@ def test_server_serves_the_page_the_viewer_and_this_replay_only(server):
     assert _get(server + "viewer/re_viewer")[1] == "text/javascript"  # imported without its extension
     assert _get(server + "viewer/re_viewer_bg.wasm")[1] == "application/wasm"
     for bad in ("data/secret.txt", "data/../manifest.json", "data/%2e%2e/manifest.json", "app/../hud.py",
-                "viewer/../package.json", "data/hud/../../manifest.json"):
+                "viewer/../package.json", "data/hud/../../manifest.json",
+                "data/hud/..%2fsecret.txt", "data/hud/%2e%2e%2fsecret.txt",  # review: hud/..%2f reached views/
+                "viewer///host/share/x", "viewer/%5C%5Chost%5Cshare%5Cx", "app/C:%5CWindows%5Cwin.ini"):
         assert _get(server + bad)[0] == 404, bad
+
+
+def test_closing_window_says_bye(server):
+    req = urllib.request.Request(server + "api/bye", data=b"", method="POST")
+    with urllib.request.urlopen(req, timeout=10) as r:
+        assert r.status == 204
+
+
+def test_airborne_is_counted_as_dw_compare_counts_it():
+    """A log running on the ground before take-off and after landing is not flight (review finding)."""
+    has_fix = np.ones(9, dtype=bool)
+    height = np.array([0, 0.5, 1, 3, 10, 12, 3, 0.4, 0])
+    assert hud._airborne(has_fix, height).tolist() == [False] * 3 + [True] * 4 + [False] * 2
+    assert hud._airborne(has_fix, None).all()

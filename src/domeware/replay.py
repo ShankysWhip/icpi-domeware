@@ -9,6 +9,7 @@ from __future__ import annotations
 import io
 import json
 import math
+import os
 import re
 from pathlib import Path
 
@@ -343,6 +344,47 @@ def events_for(tr: pd.DataFrame, track_id: int) -> list[tuple[pd.Timestamp, str]
     return sorted(out)
 
 
+def swap_in(part: Path, rrd: Path, wait_s: float = 3.0) -> None:
+    """Put the finished replay in place of the old one. Windows refuses to overwrite a file that a viewer or the virus
+    scanner still holds, though it often still lets it be renamed: then the old one is moved aside first and removed
+    when it can be. If neither works, the old replay stays as it was and the reason is said plainly."""
+    import time
+
+    for old in rrd.parent.glob(rrd.name + ".old-*"):  # left by an earlier swap, once nothing holds them
+        try:
+            old.unlink()
+        except OSError:
+            pass
+    end = time.monotonic() + wait_s
+    while True:
+        try:
+            os.replace(part, rrd)
+            return
+        except PermissionError:
+            pass
+        aside = rrd.with_name(f"{rrd.name}.old-{time.time_ns()}")
+        try:
+            os.rename(rrd, aside)
+        except OSError:
+            aside = None
+        if aside is not None:
+            try:
+                os.rename(part, rrd)
+            except OSError:
+                os.rename(aside, rrd)  # put the old one back: a replay is never left missing
+            else:
+                try:
+                    aside.unlink()
+                except OSError:
+                    pass  # still held: removed by the next swap
+                return
+        if time.monotonic() > end:
+            part.unlink(missing_ok=True)
+            raise SystemExit(f"{rrd.name} is held open by another program (a viewer or HUD window): close it and run "
+                             "dw replay again. The previous replay is kept as it was.")
+        time.sleep(0.25)
+
+
 def _activity_span(s: Session, truths: dict, tracks: pd.DataFrame):
     """First and last moment anything happened (drones, radar tracks, pictures); None if nothing is timed."""
     from domeware.images import pictures
@@ -466,7 +508,8 @@ def build(s: Session) -> dict:
     stats: dict = {}
     rec = rr.RecordingStream("domeware-replay", recording_id=s.manifest["session_id"])
     rrd = s.views / "replay.rrd"
-    rec.save(str(rrd))
+    part = s.views / "replay.rrd.partial"  # a build that stops half way leaves the previous replay intact
+    rec.save(str(part))
     rec.log("world", rr.ViewCoordinates.RIGHT_HAND_Z_UP, static=True)
 
     tiles, info = terrain_glb(s, site)
@@ -740,6 +783,7 @@ def build(s: Session) -> dict:
                            collapse_panels=True)
     rec.flush()
     rec.disconnect()
+    swap_in(part, rrd)
     bp.save("domeware-replay", str(s.views / "replay.rbl"))
     hud_bp.save("domeware-replay", str(s.views / "replay_hud.rbl"))
     from domeware.hud import export as hud_export

@@ -277,13 +277,25 @@ class App:
         def work():
             ok = True
             cmds = command(job, session)
-            if job == "start":  # the HUD keeps serving while its window is open: start it and let it run
+            if job == "start":  # the HUD keeps serving while its window is open: start it, check that it came up
                 for cmd in cmds[:-1]:
-                    ok = ok and subprocess.run(cmd, capture_output=True).returncode == 0
+                    p = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+                    if p.returncode:
+                        ok = False
+                        self.root.after(0, self.write, (p.stdout + p.stderr)[-4000:] + "\n")
                 if ok:
-                    subprocess.Popen(cmds[-1], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-                msg = "HUD opening in its own window." if ok else "Rebuilding the replay failed."
+                    log = session / "views" / "hud.log"
+                    log.parent.mkdir(parents=True, exist_ok=True)
+                    with open(log, "w", encoding="utf-8") as fh:
+                        hud = subprocess.Popen(cmds[-1], stdout=fh, stderr=subprocess.STDOUT,
+                                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                    try:  # still running after 6 s: it is serving; ended already: it failed, and the log says why
+                        hud.wait(timeout=6)
+                        ok = False
+                        self.root.after(0, self.write, log.read_text(encoding="utf-8", errors="replace")[-4000:] + "\n")
+                    except subprocess.TimeoutExpired:
+                        pass
+                msg = "HUD opening in its own window." if ok else "The HUD did not start: the reason is above."
                 self.root.after(0, self.write, msg + "\n")
                 self.root.after(0, self.done, ok, title)
                 return
