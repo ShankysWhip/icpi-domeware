@@ -39,7 +39,11 @@ def convert_robin(s: Session) -> None:
                 and (out / "tracks.parquet").exists()):
             print(f"robin: {xml.name}: unchanged, kept")  # a full day of radar takes minutes; never redo it for nothing
             continue
-        rep = R.convert(xml, out, cfg_dir, raw, quicklook=False, hash_raw=False)
+        try:
+            rep = R.convert(xml, out, cfg_dir, raw, quicklook=False, hash_raw=False)
+        except Exception as e:  # noqa: BLE001 - one bad export must not stop the other channels; the reason is kept
+            s.note(f"robin: {xml.name}: NOT converted: {type(e).__name__}: {e}")
+            continue
         focus = _pick_focus_track(out / "tracks.parquet") if (out / "tracks.parquet").exists() else None
         if (out / "tracks.parquet").exists():  # quicklooks from the written tables: no second parse of the XML
             try:
@@ -76,8 +80,9 @@ def convert_robin(s: Session) -> None:
                                   "ground_level_m": radar.get("ground_level_m"),
                                   "azimuth_deg": (radar.get("orientation") or {}).get("azimuth_deg"),
                                   "source": f"{out.name}/site.json (declared by the radar)"}
-        s.note(f"robin: {xml.name}: {t.get('rows_kept')} track states, {t.get('unique_tracks')} tracks, "
-               f"focus track {focus}")
+        kept = t.get("rows_kept") or 0
+        s.note(f"robin: {xml.name}: {kept} track states, {t.get('unique_tracks') or 0} tracks, focus track {focus}"
+               + ("" if kept else " (no tracks: the radar tracked nothing, or the file is cut or not a Robin export)"))
 
 
 def convert_dji_csv(s: Session) -> None:
@@ -90,11 +95,18 @@ def convert_dji_csv(s: Session) -> None:
     ds = D.Site(site["lat_deg"], site["lon_deg"], site["alt_m"], name=site.get("name") or "site",
                 note="radar-declared position, altitude datum unverified") if site else None
     for f in files:
-        df = pd.read_csv(f, low_memory=False)
-        ground = _dem_height_at_home(s, df)
-        opts = D.ConvertOptions(site=ds, takeoff_ground_n2000_m=ground, source_sha256=D.sha256_file(str(f)),
-                                session_id=s.manifest["session_id"])
-        osd, events, meta = D.convert(df, opts)
+        try:
+            df = pd.read_csv(f, low_memory=False)
+            ground = _dem_height_at_home(s, df)
+            opts = D.ConvertOptions(site=ds, takeoff_ground_n2000_m=ground, source_sha256=D.sha256_file(str(f)),
+                                    session_id=s.manifest["session_id"])
+            osd, events, meta = D.convert(df, opts)
+        except Exception as e:  # noqa: BLE001 - one bad export must not stop the other channels; the reason is kept
+            s.note(f"dji: {f.name}: NOT converted: {type(e).__name__}: {e}")
+            continue
+        if not osd.num_rows:  # an empty result is a finding, not a flight: no empty files written
+            s.note(f"dji: {f.name}: NOT converted: no flight-log rows (is it a DJI CSV export?)")
+            continue
         out = s.streams / "dji"
         out.mkdir(parents=True, exist_ok=True)
         from domeware.replay import unique_stem

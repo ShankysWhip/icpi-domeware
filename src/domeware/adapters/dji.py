@@ -370,25 +370,28 @@ def convert(df: pd.DataFrame, opts: ConvertOptions, details: dict | None = None)
 
 def build_events(o: pd.DataFrame) -> pd.DataFrame:
     rows: list[dict] = []
+    states = (("is_motor_on", "motors"), ("is_on_ground", "ground"), ("flyc_state", "flight_mode"),
+              ("gps_valid", "gps_valid"), ("go_home_status", "go_home"), ("camera_is_video", "video"))
+    # whole columns as plain lists, read once: one pandas lookup per cell made an hour of log take seconds
+    col = {c: [None if v is pd.NA else v for v in o[c].astype(object).tolist()]
+           for c in [*(s for s, _ in states), "app_tip", "app_warn"]}
+    t_utc, fly, frame = o["t_utc"].tolist(), o["fly_time_s"].tolist(), o["frame_idx"].tolist()
 
     def add(i: int, kind: str, text: str) -> None:
-        rows.append({"t_utc": o.at[i, "t_utc"], "fly_time_s": float(o.at[i, "fly_time_s"]),
-                     "frame_idx": int(o.at[i, "frame_idx"]), "kind": kind, "text": text})
+        rows.append({"t_utc": t_utc[i], "fly_time_s": float(fly[i]), "frame_idx": int(frame[i]), "kind": kind, "text": text})
 
     prev: dict[str, Any] = {}
     for i in range(len(o)):
-        for col, kind in (("is_motor_on", "motors"), ("is_on_ground", "ground"), ("flyc_state", "flight_mode"),
-                          ("gps_valid", "gps_valid"), ("go_home_status", "go_home"), ("camera_is_video", "video")):
-            v = o.at[i, col]
-            v = None if v is pd.NA else v
-            if col in prev and v != prev[col] and v is not None:
+        for c, kind in states:
+            v = col[c][i]
+            if c in prev and v != prev[c] and v is not None:
                 label = {("ground", False): "take-off", ("ground", True): "landing"}.get((kind, v), f"{kind} -> {v}")
                 add(i, "state", label)
-            prev[col] = v
-        for col in ("app_tip", "app_warn"):
-            v = o.at[i, col]
+            prev[c] = v
+        for c in ("app_tip", "app_warn"):
+            v = col[c][i]
             if isinstance(v, str) and v:
-                add(i, col, v)
+                add(i, c, v)
     return pd.DataFrame(rows, columns=["t_utc", "fly_time_s", "frame_idx", "kind", "text"])
 
 

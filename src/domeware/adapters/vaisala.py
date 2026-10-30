@@ -47,7 +47,10 @@ def _value(v):
 
 
 def read_wxt_excel(path: Path) -> tuple[pd.DataFrame, dict]:
-    raw = pd.read_excel(path, header=None, dtype=object)
+    try:
+        raw = pd.read_excel(path, header=None, dtype=object)
+    except Exception as e:  # noqa: BLE001 - a damaged or cut copy: one clear message instead of a zip/xml traceback
+        raise ValueError(f"{Path(path).name}: not a readable Excel export ({type(e).__name__}); copy the file again") from e
     head = {str(raw.iat[r, c]).strip().rstrip(":"): raw.iat[r, c + 1] for r in range(min(12, len(raw)))
             for c in range(raw.shape[1] - 1) if isinstance(raw.iat[r, c], str) and raw.iat[r, c].strip().endswith(":")}
     tz = str(head.get("Time Zone", "")).strip()

@@ -237,6 +237,13 @@ site, runs the whole chain with every step timed, then loads each replay in a vi
 takes five screenshots. On this desktop (30 Oct): 7 drones 15 s chain, 20 MB replay; 20 drones 26 s, 29 MB; the
 viewer loads either in 1.7 s.
 
+`uv run python scripts/converter_stress.py <out folder> --hours 1` gives every converter about an hour of SIMULATED
+data at the device's real rate (the Robin sample repeated), times it, and feeds each one an empty file, random bytes
+and a file cut in half: each must convert or fail with a clear message. On this desktop (31 Oct): DJI SRT 108 000
+captions 1.5 s, RTKLIB 18 000 fixes 0.14 s, MAVLink tlog 72 000 positions 0.7 s, Vaisala 7 days 0.6 s, DJI CSV
+36 000 rows 0.19 s, Robin XML 9.5 MB/s. A broken file in one channel never stops the others: it is noted
+(`NOT converted: ...`) and the rest of `dw convert` goes on.
+
 ## Test sites and simulated runs
 
 - **`dw site save <session> <name>`** keeps a test site (the radar's declared position and orientation) as a named

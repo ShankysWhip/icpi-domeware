@@ -38,7 +38,7 @@ def read_dji_srt(path: Path, tz: str = LOCAL_TZ) -> tuple[pd.DataFrame, dict]:
     rows, skipped = [], 0
     for b in blocks:
         m = _SRT_TIME.search(b)
-        vals = {k: (float(r.search(b).group(1)) if r.search(b) else np.nan) for k, r in _SRT_FIELDS.items()}
+        vals = {k: (float(f.group(1)) if (f := r.search(b)) else np.nan) for k, r in _SRT_FIELDS.items()}  # one search each
         if not m or np.isnan(vals["lat_deg"]) or np.isnan(vals["lon_deg"]):
             skipped += int(bool(b.strip()))
             continue
@@ -57,22 +57,35 @@ def read_dji_srt(path: Path, tz: str = LOCAL_TZ) -> tuple[pd.DataFrame, dict]:
     return df[["t_utc", "lat_deg", "lon_deg", "h_rel_takeoff_m", "dji_abs_alt_m"]].reset_index(drop=True), meta
 
 
+def _close(log) -> None:
+    """Close a pymavlink log and its file; the two reader kinds hold different handles open."""
+    for obj in (log, getattr(log, "filehandle", None), getattr(log, "f", None)):
+        try:
+            if obj is not None and callable(getattr(obj, "close", None)):
+                obj.close()
+        except (OSError, ValueError, AttributeError, BufferError):  # already closed, or a map with views still open
+            pass
+
+
 def read_ardupilot_bin(path: Path) -> tuple[pd.DataFrame, dict]:
     """ArduPilot DataFlash .bin -> GPS fixes. UTC from GPS week + ms minus leap seconds (per row, not pymavlink's)."""
     from pymavlink import DFReader
 
     log = DFReader.DFReader_binary(str(path), zero_time_base=True)
     rows, home_alt = [], None
-    while (m := log.recv_match(type=["GPS"])) is not None:
-        d = m.to_dict()
-        if d.get("I", 0) != 0 or d.get("Status", 0) < 3:  # first receiver, 3D fix or better
-            continue
-        t = pd.Timestamp("1980-01-06", tz="UTC") + pd.Timedelta(weeks=d["GWk"], milliseconds=d["GMS"]) \
-            - pd.Timedelta(seconds=GPS_UTC_LEAP_S)
-        if home_alt is None:
-            home_alt = d["Alt"]
-        rows.append({"t_utc": t, "lat_deg": d["Lat"], "lon_deg": d["Lng"], "h_rel_takeoff_m": d["Alt"] - home_alt,
-                     "gps_alt_m": d["Alt"], "nsats": d.get("NSats"), "hdop": d.get("HDop")})
+    try:
+        while (m := log.recv_match(type=["GPS"])) is not None:
+            d = m.to_dict()
+            if d.get("I", 0) != 0 or d.get("Status", 0) < 3:  # first receiver, 3D fix or better
+                continue
+            t = pd.Timestamp("1980-01-06", tz="UTC") + pd.Timedelta(weeks=d["GWk"], milliseconds=d["GMS"]) \
+                - pd.Timedelta(seconds=GPS_UTC_LEAP_S)
+            if home_alt is None:
+                home_alt = d["Alt"]
+            rows.append({"t_utc": t, "lat_deg": d["Lat"], "lon_deg": d["Lng"], "h_rel_takeoff_m": d["Alt"] - home_alt,
+                         "gps_alt_m": d["Alt"], "nsats": d.get("NSats"), "hdop": d.get("HDop")})
+    finally:  # an open log stays locked on Windows (found by the converter stress test)
+        _close(log)
     if not rows:
         raise ValueError(f"{path.name}: no GPS rows with a 3D fix")
     df = pd.DataFrame(rows).drop_duplicates("t_utc").sort_values("t_utc").reset_index(drop=True)
@@ -91,14 +104,17 @@ def read_mavlink_tlog(path: Path) -> tuple[pd.DataFrame, dict]:
 
     mlog = mavutil.mavlink_connection(str(path), dialect="ardupilotmega")
     pos, sync = [], {}
-    while (m := mlog.recv_match(type=["GLOBAL_POSITION_INT", "SYSTEM_TIME"])) is not None:
-        sysid = m.get_srcSystem()
-        if m.get_type() == "SYSTEM_TIME":
-            if m.time_unix_usec > 1.5e15 and m.time_boot_ms > 0:  # unix time is valid only after GPS time is known
-                sync.setdefault(sysid, []).append(m.time_unix_usec / 1e3 - m.time_boot_ms)
-        elif m.lat != 0 or m.lon != 0:
-            pos.append((sysid, m.time_boot_ms, getattr(m, "_timestamp", np.nan), m.lat / 1e7, m.lon / 1e7,
-                        m.relative_alt / 1e3, m.alt / 1e3))
+    try:
+        while (m := mlog.recv_match(type=["GLOBAL_POSITION_INT", "SYSTEM_TIME"])) is not None:
+            sysid = m.get_srcSystem()
+            if m.get_type() == "SYSTEM_TIME":
+                if m.time_unix_usec > 1.5e15 and m.time_boot_ms > 0:  # unix time is valid only after GPS time is known
+                    sync.setdefault(sysid, []).append(m.time_unix_usec / 1e3 - m.time_boot_ms)
+            elif m.lat != 0 or m.lon != 0:
+                pos.append((sysid, m.time_boot_ms, getattr(m, "_timestamp", np.nan), m.lat / 1e7, m.lon / 1e7,
+                            m.relative_alt / 1e3, m.alt / 1e3))
+    finally:
+        _close(mlog)
     if not pos:
         raise ValueError(f"{path.name}: no GLOBAL_POSITION_INT with a position")
     df = pd.DataFrame(pos, columns=["vehicle_id", "boot_ms", "rx_unix_s", "lat_deg", "lon_deg", "h_rel_takeoff_m", "amsl_m"])
@@ -143,22 +159,29 @@ def read_rtklib_pos(path: Path) -> tuple[pd.DataFrame, dict]:
     gpst = not any("UTC" in ln for ln in head[-1:])
     if any("geoid" in ln.lower() for ln in head):
         raise ValueError(f"{path.name}: geoid heights in .pos; export ellipsoidal heights (RTKLIB default)")
-    rows = []
+    rows, bad = [], 0
     for ln in lines:
         if ln.startswith("%") or not ln.strip():
             continue
         p = ln.split()
-        rows.append({"t": f"{p[0]} {p[1]}", "lat_deg": float(p[2]), "lon_deg": float(p[3]), "h_ell_m": float(p[4]),
-                     "rtk_q": int(p[5]), "ns": int(p[6])})
+        try:  # a line cut short (copy stopped, card full) is counted and skipped, never fatal
+            rows.append({"t": f"{p[0]} {p[1]}", "lat_deg": float(p[2]), "lon_deg": float(p[3]), "h_ell_m": float(p[4]),
+                         "rtk_q": int(p[5]), "ns": int(p[6])})
+        except (IndexError, ValueError):
+            bad += 1
     if not rows:
         raise ValueError(f"{path.name}: no solution lines")
     df = pd.DataFrame(rows)
-    df["t_utc"] = pd.to_datetime(df.pop("t"), format="%Y/%m/%d %H:%M:%S.%f", utc=True)
+    df["t_utc"] = pd.to_datetime(df.pop("t"), format="%Y/%m/%d %H:%M:%S.%f", utc=True, errors="coerce")
+    bad += int(df["t_utc"].isna().sum())
+    df = df.dropna(subset=["t_utc"]).reset_index(drop=True)
+    if not len(df):
+        raise ValueError(f"{path.name}: no solution lines with a valid time")
     if gpst:
         df["t_utc"] -= pd.Timedelta(seconds=GPS_UTC_LEAP_S)
     df["h_n2000_m"] = ellipsoidal_to_n2000(df["lat_deg"], df["lon_deg"], df["h_ell_m"])
     df["h_rel_takeoff_m"] = df["h_n2000_m"] - df["h_n2000_m"].iloc[:10].median()
-    meta = {"time_method": "GPST - 18 s" if gpst else "UTC as in file", "rows": len(df),
+    meta = {"time_method": "GPST - 18 s" if gpst else "UTC as in file", "rows": len(df), "skipped_lines": bad,
             "fix_share": round(float((df["rtk_q"] == 1).mean()), 3),
             "height_note": "ellipsoidal -> N2000 via FIN2023N2000; rtk_q 1 = fix, 2 = float"}
     return df, meta
