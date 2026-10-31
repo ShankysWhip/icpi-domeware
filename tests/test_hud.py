@@ -76,6 +76,32 @@ def test_menu_links_the_report_and_the_kml_only_when_they_exist(server, tmp_path
     assert _get(server + "data/replay_stats.json")[0] == 404  # the rest of views/ stays private
 
 
+def test_window_report_is_kept_on_this_computer_and_clamped(server, tmp_path):
+    with urllib.request.urlopen(server + "api/ping?w=1536&h=816&dpr=1.25&glass=1&fps=58.4&evil=%3Cx%3E", timeout=10) as r:
+        body = json.loads(r.read())
+    assert set(body) == {"web", "restart"} and body["restart"] is False
+    client = tmp_path / "S" / "views" / hud.CLIENT_FILE
+    c = json.loads(client.read_text())
+    assert c["window"] == [1536, 816] and c["scale"] == 1.25 and c["playback_fps"] == 60 and c["glass"] is True
+    urllib.request.urlopen(server + "api/ping?w=99999&dpr=nan", timeout=10).read()
+    c = json.loads(client.read_text())
+    assert c["window"] == [10000, 816] and c["scale"] == 1.25  # clamped; nan ignored; nothing else is kept
+    assert "evil" not in client.read_text()
+
+
+def test_open_window_is_told_when_the_code_changed(server, monkeypatch):
+    web, py = hud._code_stamp()
+    monkeypatch.setattr(hud, "_code_stamp", lambda: (web + 5, py + 5))
+    with urllib.request.urlopen(server + "api/ping", timeout=10) as r:
+        assert json.loads(r.read()) == {"web": web + 5, "restart": True}
+
+
+def test_view_address_matches_what_the_page_reads():
+    assert hud.view_query() == ""
+    assert hud.view_query(at="13:45:10", panels="over,radar", hide=True, shot=True) == \
+        "?t=13:45:10&open=over,radar&panels=0&shot=1"
+
+
 def test_closing_window_says_bye(server):
     req = urllib.request.Request(server + "api/bye", data=b"", method="POST")
     with urllib.request.urlopen(req, timeout=10) as r:

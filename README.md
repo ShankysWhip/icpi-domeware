@@ -56,12 +56,29 @@ one clock (numbers in monospace, small spaced labels, status lights):
   thumbnails (hover for a preview, click for full size) and wind. Wheel zooms, double-click fits the activity.
 - **Menu** (☰ top left, or M): the session, what data the replay has, view switches (panels, UTC/local, loop,
   glass panels: they turn solid by themselves if playback runs slowly), the report and the Google Earth file, and the keys.
+- **A view as one line:** `uv run dw hud <session> --at 13:45:10 --open over,radar` opens that moment (UTC) with
+  those instruments; **C** (or Menu → This view) copies the current view as that line, to paste in chat. **R**
+  reloads at the same moment; when the HUD's files change while it is open, a *New version* button offers that
+  reload (a change in domeware's server code asks for Start replay again).
 - Keys (the **?** button lists them too): Space play/pause, ←/→ 5 s, Shift ←/→ 60 s, Home/End, 1–6 instruments,
-  P panels, M menu, Esc close.
+  P panels, M menu, C copy this view, R reload here, Esc close.
 
 It is served from this computer only (127.0.0.1) and stops by itself about 45 s after its window is closed. The data
 is written by `dw replay` (`views/hud/`); the web viewer comes from `dw setup` (hash-pinned in `domeware-vendor`,
-never in git); nothing is fetched from the internet while it runs.
+never in git); nothing is fetched from the internet while it runs. The window reports its size, screen scale and
+playback fps into `views/hud_client.json` (numbers only, this computer only), so fit and smoothness can be checked
+on the real screen.
+
+### Pictures for a review (`dw shots`)
+
+```
+uv run dw shots <session>                         # at the window size the HUD last reported
+uv run dw shots <session> --size 1536x816@1.25 --at 13:45:10 --open over,radar --menu
+```
+
+Full-resolution PNGs of the HUD, 3D included, in `views/shots/` (about 8 s each). A hidden Microsoft Edge with its
+own empty profile (removed afterwards) opens the HUD and is driven over its DevTools port on 127.0.0.1; nothing
+leaves the computer. Made for reviews from a phone: the picture shows what the person at the laptop would see.
 
 ## Open the replay (manual)
 

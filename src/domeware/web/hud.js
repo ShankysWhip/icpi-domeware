@@ -2,6 +2,7 @@
 // The data comes from views/hud/data.json (dw replay); the viewer files from domeware-vendor (dw setup).
 
 const qs = new URLSearchParams(location.search);
+const SHOT = qs.get("shot") === "1";  // dw shots: a picture is being taken (no motion, nothing saved or reported)
 const $ = (sel, root = document) => root.querySelector(sel);
 const SVGNS = "http://www.w3.org/2000/svg";
 
@@ -177,7 +178,7 @@ function setPlaying(on) {
   if (!on) push(true);
 }
 let lastFrame = performance.now(), lastUi = 0;
-const FX = { ema: 16.7, n: 0, manual: false };  // frame time while playing
+const FX = { ema: 16.7, n: 0, manual: false, fps: null };  // frame time while playing
 function frame(now) {
   const dt = Math.min(250, now - lastFrame);
   lastFrame = now;
@@ -185,9 +186,12 @@ function frame(now) {
     S.t += dt * S.speed;
     if (S.t >= S.act[1]) { if (S.loop) S.t = S.act[0]; else { S.t = S.act[1]; setPlaying(false); } }
     push();
-    if (S.glass && !FX.manual && dt < 100 && !document.hidden) {  // glass costs GPU time over the moving 3D: if playback drags, go solid
+    if (dt < 100 && !document.hidden) {  // playback smoothness (reported with the ping); glass costs GPU time: slow playback goes solid
       FX.ema += (dt - FX.ema) * 0.05;
-      if (++FX.n > 240 && FX.ema > 30) setGlass(false);
+      if (++FX.n > 240) {
+        FX.fps = 1000 / FX.ema;
+        if (S.glass && !FX.manual && !SHOT && FX.ema > 30) setGlass(false);
+      }
     }
   }
   TL.playhead();
@@ -573,19 +577,21 @@ const Panels = {
     rail.append(h("i", { class: "rail-sep" }), this.hideBtn);
   },
   meta(k, text) { this.cards[k].meta.textContent = text; },
-  restore() {  // what was open last time, on this computer
+  restore(want = {}) {  // what was open last time on this computer; a view in the address wins and is not saved
     try {
-      const p = JSON.parse(localStorage.getItem(PREFS) || "null");
+      const p = SHOT ? null : JSON.parse(localStorage.getItem(PREFS) || "null");
       if (p && Array.isArray(p.open)) S.open = new Set(p.open.filter((k) => INSTR.some((it) => it.k === k)));
       else if (innerHeight < 880) S.open = new Set(["over"]);  // a smaller screen starts with more map
       if (p && p.away) S.away = true;
       if (p && p.glass === false) { S.glass = false; FX.manual = true; }
     } catch { /* no storage here: the defaults */ }
+    if (want.open) S.open = new Set(want.open);
+    if (want.away !== undefined) S.away = want.away;
     setGlass(S.glass, false);
     for (const it of INSTR) this.sync(it.k);
     this.away(S.away, false);
   },
-  save() { try { localStorage.setItem(PREFS, JSON.stringify({ open: [...S.open], away: S.away, glass: S.glass })); } catch { /* private window */ } },
+  save() { if (!SHOT) try { localStorage.setItem(PREFS, JSON.stringify({ open: [...S.open], away: S.away, glass: S.glass })); } catch { /* private window */ } },
   is(k) { return S.open.has(k) && !S.away; },
   toggle(k) { this.set(k, !S.open.has(k)); },
   set(k, on) {
@@ -1298,6 +1304,75 @@ const Lightbox = {
   close() { $("#lightbox").hidden = true; },
 };
 
+// ---------- a view in the address: ?t=13:45:10&open=over,radar&panels=0&menu=1&tz=local (dw hud --at/--open, dw shots) ----------
+function parseAt(v) {
+  if (!v) return null;
+  if (/^\d{12,}$/.test(v)) return +v;
+  if (/^\d{4}-\d\d-\d\dT/.test(v)) { const ms = Date.parse(v); return Number.isFinite(ms) ? ms : null; }
+  const m = /^(\d{1,2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?$/.exec(v.trim());
+  if (!m) return null;
+  const ms = ((+m[1] * 60 + +m[2]) * 60 + +(m[3] || 0)) * 1000 + +(m[4] || "0").padEnd(3, "0");
+  const day = Math.floor(S.act[0] / 864e5) * 864e5;  // that UTC time on the activity's day, or the next day in the replay
+  const at = [day, day - 864e5, day + 864e5].map((d) => d + ms);
+  return at.find((x) => x >= S.full[0] && x <= S.full[1]) ?? at[0];
+}
+const View = {
+  read() {
+    const v = {}, t = parseAt(qs.get("t")), open = qs.get("open");
+    if (t !== null) v.t = clamp(t, S.full[0], S.full[1]);
+    if (open !== null) v.open = open === "all" ? INSTR.map((i) => i.k) : open.split(",").filter((k) => INSTR.some((i) => i.k === k));
+    if (qs.get("panels") === "0") v.away = true;
+    if (qs.get("menu") === "1") v.menu = true;
+    if ((qs.get("tz") || "").toLowerCase() === "local") v.tz = "LOCAL";
+    return v;
+  },
+  at() { const p = parts(S.t, "UTC"); return `${p.hour}:${p.minute}:${p.second}`; },
+  open() { const o = INSTR.map((i) => i.k).filter((k) => S.open.has(k)); return o.length ? o.join(",") : "none"; },
+  command() { return `dw hud ${S.data.session} --at ${this.at()} --open ${this.open()}${S.away ? " --hide" : ""}`; },
+  async copy() {  // the same moment and instruments, as one line to paste in chat or a terminal
+    const text = this.command();
+    let ok = false;
+    try { await navigator.clipboard.writeText(text); ok = true; } catch {
+      const ta = h("textarea", { style: "position:fixed;left:-9999px" }, text);
+      document.body.append(ta);
+      ta.select();
+      try { ok = document.execCommand("copy"); } catch { /* no clipboard here */ }
+      ta.remove();
+    }
+    toast(ok ? `Copied: ${text}` : text);
+  },
+  reload() {  // the page again at this moment, with these instruments (and playing, if it was)
+    location.href = `${location.pathname}?t=${this.at()}&open=${this.open()}${S.away ? "&panels=0" : ""}`
+      + `${S.tz === "LOCAL" ? "&tz=local" : ""}${S.playing ? "&play=1" : ""}`;
+  },
+};
+let toastTimer = null;
+function toast(text) {
+  const el = $("#toast");
+  el.textContent = text;
+  el.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.hidden = true; }, 3500);
+}
+// new code while the window is open: the page reloads at the same moment; new server code needs Start replay again
+const Ver = {
+  web: null,
+  check(r) {
+    if (!r) return;
+    if (Ver.web === null) Ver.web = r.web;
+    const b = $("#update");
+    if (r.restart) { b.dataset.kind = "restart"; b.textContent = "domeware updated · close this window and press Start replay"; }
+    else if (r.web !== Ver.web) { b.dataset.kind = "reload"; b.textContent = "New version · reload (R)"; }
+    else return;
+    b.hidden = false;
+  },
+};
+function sendPing() {  // keeps the server running; reports the window size and playback speed (kept on this computer only)
+  const q = SHOT ? "" : `?w=${innerWidth}&h=${innerHeight}&dpr=${devicePixelRatio.toFixed(2)}&glass=${S.glass ? 1 : 0}`
+    + (FX.fps ? `&fps=${FX.fps.toFixed(1)}` : "");
+  fetch(`/api/ping${q}`, { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).then(Ver.check).catch(() => {});
+}
+
 // ---------- menu page (top left) ----------
 const MARK = '<svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 18a9 9 0 0 1 18 0"/><path d="M7 18a5 5 0 0 1 10 0"/><circle cx="12" cy="18" r="1.4"/><path d="M12 18 18.5 7.5"/></svg>';
 const Drawer = {
@@ -1319,6 +1394,7 @@ const Drawer = {
     this.panelSw = sw(!S.away, () => Panels.away(!S.away));
     this.loopSw = sw(S.loop, () => setLoop(!S.loop));
     this.glassSw = sw(S.glass, () => { FX.manual = true; setGlass(!S.glass); });
+    this.copyBtn = h("button", { class: "copybtn", onclick: () => View.copy() }, "Copy");
     this.tzSeg = seg([["UTC", "UTC"], ["LOCAL", "Local"]], S.tz, setTz);
     this.links = [
       link("report.html", "Session report", '<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h7"/>'),
@@ -1326,7 +1402,7 @@ const Drawer = {
     ];
     const keys = [["Space", "play / pause"], ["← →", "5 s back / forward (Shift: 60 s)"], ["Home End", "start / end of the activity"],
       ["1 – 6", "open or close an instrument"], ["P", "hide or show the panels"], ["M", "this menu"], ["Esc", "close"],
-      ["Wheel", "zoom the timeline"], ["Dbl-click", "fit the timeline to the activity"]];
+      ["C", "copy this view"], ["R", "reload at this moment"], ["Wheel", "zoom the timeline"], ["Dbl-click", "fit the timeline to the activity"]];
     $("#drawer").append(
       h("div", { class: "dr-head" }, h("span", { html: MARK }), h("b", {}, "DOMEWARE"), h("span", {}, "MENU"), this.closeBtn),
       h("div", { class: "dr-body" },
@@ -1346,7 +1422,8 @@ const Drawer = {
           ctl("Panels", "the instruments over the map", this.panelSw, "P"),
           ctl("Time", "UTC for evidence, local for the field team", this.tzSeg),
           ctl("Loop", "start again at the end of the activity", this.loopSw),
-          ctl("Glass panels", "the map shows through; turns off by itself if playback is slow", this.glassSw)),
+          ctl("Glass panels", "the map shows through; turns off by itself if playback is slow", this.glassSw),
+          ctl("This view", "this moment and these instruments as one line, to show someone exactly this", this.copyBtn, "C")),
         sec("04", "Open", ...this.links),
         sec("05", "Keys", h("div", { class: "dr-keys" }, ...keys.flatMap(([k, v]) => [h("kbd", {}, k), h("span", {}, v)])))),
       h("div", { class: "dr-foot" }, `Replay built ${String(d.generated_utc).slice(0, 16).replace("T", " ")} UTC · id ${String(d.recording_id).slice(0, 8)}`,
@@ -1402,7 +1479,7 @@ function bindHelp() {
   if (!b) return;
   const html = '<b>Keys</b><div class="keys2"><kbd>Space</kbd><span>play / pause</span><kbd>← →</kbd><span>5 s back / forward</span>'
     + '<kbd>Shift</kbd><span>with ← → : 60 s</span><kbd>Home End</kbd><span>start / end of the activity</span>'
-    + '<kbd>1 – 6</kbd><span>open or close an instrument</span><kbd>P</kbd><span>hide or show the panels</span><kbd>M</kbd><span>menu</span>'
+    + '<kbd>1 – 6</kbd><span>open or close an instrument</span><kbd>P</kbd><span>hide or show the panels</span><kbd>M</kbd><span>menu</span><kbd>C</kbd><span>copy this view</span>'
     + '<kbd>Wheel</kbd><span>zoom the timeline</span><kbd>Dbl-click</kbd><span>fit the activity</span></div>'
     + `<div class="prov">Data built ${esc(String(S.data.generated_utc).slice(0, 16).replace("T", " "))} UTC<br>Session ${esc(S.data.session)}`
     + ` · replay ${esc(String(S.data.recording_id).slice(0, 8))}</div>`;
@@ -1423,6 +1500,8 @@ function bindKeys() {
     else if (digit && plain && !box) Panels.toggle(INSTR[+digit[1] - 1].k);
     else if (e.code === "KeyP" && plain && !box) Panels.away(!S.away);
     else if (e.code === "KeyM" && plain && !box) Drawer.toggle();
+    else if (e.code === "KeyC" && plain && !box) View.copy();
+    else if (e.code === "KeyR" && plain && !box) View.reload();
     else if (e.code === "Escape") { if (!box && Drawer.isOpen) Drawer.close(); else Lightbox.close(); }
     else used = false;
     if (used) { e.preventDefault(); e.stopPropagation(); }
@@ -1431,7 +1510,7 @@ function bindKeys() {
 let resizeTimer = null;
 function onResize() {
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => { TL.render(); placeAll(); }, 120);  // the weather chart and the scope follow their own size
+  resizeTimer = setTimeout(() => { TL.render(); placeAll(); sendPing(); }, 120);  // the weather chart and the scope follow their own size
 }
 async function init() {
   const res = await fetch("/data/hud/data.json", { cache: "no-store" });
@@ -1445,6 +1524,10 @@ async function init() {
   S.full = d.window || S.act.slice();
   S.view = padRange(S.act, 0.04);
   S.t = S.act[0];
+  if (SHOT) document.body.classList.add("shot");
+  const want = View.read();
+  if (want.t !== undefined) { S.t = want.t; if (S.t < S.view[0] || S.t > S.view[1]) S.view = padRange([S.t - 3e5, S.t + 3e5], 0); }
+  if (want.tz) S.tz = want.tz;
   $("#sessionName").textContent = d.session;
   $("#siteName").textContent = d.site.name;
   $("#stageSite").textContent = d.site.name.toUpperCase();
@@ -1469,18 +1552,19 @@ async function init() {
   TL.build();
   Lightbox.build();
   Drawer.build();
-  Panels.restore();
+  Panels.restore(want);
+  if (want.menu) Drawer.open();
   bindKeys();
   bindHelp();
   window.addEventListener("resize", onResize);
   refresh(true);
-  window.__hud.R = { refresh, TL, Clock, Panels, Over, Drones, Radar, Log, Atmo, Equip, Drawer };  // for timing checks from the console
+  window.__hud.R = { refresh, TL, Clock, Panels, Over, Drones, Radar, Log, Atmo, Equip, Drawer, View };  // for timing checks from the console
   requestAnimationFrame(frame);
   setTimeout(placeAll, 300);  // fonts settle, then the sliding pills find their places
-  const ping = () => fetch("/api/ping", { cache: "no-store" }).catch(() => {});
-  ping();
-  setInterval(ping, 5000);
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) ping(); });
+  sendPing();
+  setInterval(sendPing, 5000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) sendPing(); });
+  $("#update").addEventListener("click", () => { if ($("#update").dataset.kind === "reload") View.reload(); });
   window.addEventListener("pagehide", () => { try { navigator.sendBeacon("/api/bye"); } catch { /* best effort */ } });
   startViewer().catch((err) => { console.error(err); setLoad(`the 3D viewer did not start: ${err && err.message ? err.message : err}`, true); });
 }

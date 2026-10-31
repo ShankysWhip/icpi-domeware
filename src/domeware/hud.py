@@ -7,11 +7,13 @@ viewer, so everything shows the same moment.
 
   dw hud SESSION              build what is missing, serve, open the window
   dw hud SESSION --play       ... and start playing the activity
+  dw hud SESSION --at 13:45:10 --open over,radar    open at that moment (UTC) with those instruments
   dw hud SESSION --no-open    serve only (tests); --port N picks the port
 
 The data (views/hud/data.json and views/hud/screens/) is written by dw replay. The viewer's files come from
 domeware-vendor (dw setup, hash-pinned): nothing is fetched from the internet while the HUD runs. The server stops by
-itself about 45 s after the window is closed.
+itself about 45 s after the window is closed. The window reports its size, screen scale and playback speed; they are
+kept in views/hud_client.json on this computer (dw shots uses them) and nowhere else.
 """
 
 from __future__ import annotations
@@ -37,6 +39,8 @@ MARGIN = pd.Timedelta("15min")  # the replay keeps weather this far around the a
 DATA_FILES = {"replay.rrd", "replay_hud.rbl", "report.html", "session.kml"}  # the menu links the report and the KML
 AIRBORNE_M = 2.0  # as dw compare: airborne from the first to the last moment above 2 m over take-off
 TZ_LOCAL = "Europe/Helsinki"
+CLIENT_FILE = "hud_client.json"  # in views/: what the window last reported
+CLIENT_KEYS = {"w": (int, 200, 10000), "h": (int, 200, 10000), "dpr": (float, 0.5, 5.0), "fps": (float, 1.0, 500.0)}
 
 
 def _ms(ts) -> int:
@@ -243,11 +247,55 @@ def _web_viewer() -> Path:
     return WEB_VIEWER
 
 
+def _code_stamp() -> tuple[int, int]:
+    """Newest change (ms) of the page files and of domeware's Python code: an open window offers a reload when the
+    page changed, and asks for a restart when the server's own code did."""
+    web = max((f.stat().st_mtime_ns for f in WEB.iterdir() if f.is_file()), default=0)
+    py = max((f.stat().st_mtime_ns for f in Path(__file__).parent.rglob("*.py")), default=0)
+    return web // 1_000_000, py // 1_000_000
+
+
+def _note_client(s: Session, state: dict, query: dict) -> None:
+    """Keep what the window reports (size, screen scale, playback fps, glass) in views/hud_client.json: numbers only,
+    clamped, on this computer. Prints a line when the window size changes or the glass turns solid."""
+    got = {}
+    for k, (cast, lo, hi) in CLIENT_KEYS.items():
+        try:
+            v = cast(query[k][0])
+        except (KeyError, IndexError, ValueError):
+            continue
+        if math.isfinite(v):
+            got[k] = min(hi, max(lo, v))
+    if "glass" in query:
+        got["glass"] = query["glass"][0] == "1"
+    if not got:
+        return
+    old = state["client"]
+    new = {**old, **got}
+    if "fps" in new:
+        new["fps"] = round(new["fps"] / 5) * 5  # steadier file: playback speed to the nearest 5 fps
+    view = [new.get(k) for k in ("w", "h", "dpr")]
+    if view != [old.get(k) for k in ("w", "h", "dpr")] and new.get("w"):
+        print(f"HUD window {new['w']}x{new['h']} at {round(new.get('dpr', 1) * 100)} % screen scale", flush=True)
+    if old.get("glass") and new.get("glass") is False:
+        print(f"HUD glass panels turned solid (playback {new.get('fps', '?')} fps)", flush=True)
+    state["client"] = new
+    if new == old and time.monotonic() - state.get("client_saved", 0) < 60:
+        return
+    out = {"window": [new.get("w"), new.get("h")], "scale": new.get("dpr"), "playback_fps": new.get("fps"),
+           "glass": new.get("glass"), "updated_utc": pd.Timestamp.now(tz="UTC").isoformat(timespec="seconds")}
+    try:
+        (s.views / CLIENT_FILE).write_text(json.dumps(out, indent=1), encoding="utf-8")
+        state["client_saved"] = time.monotonic()
+    except OSError:  # a full or locked disk must not stop the HUD
+        pass
+
+
 def make_server(s: Session, port: int = 0) -> tuple[ThreadingHTTPServer, str, dict]:
     """A server for one session on 127.0.0.1. Serves the page, the viewer files and this session's replay only."""
     viewer = _web_viewer()
     roots = {"/app/": WEB.resolve(), "/viewer/": viewer.resolve(), "/data/": s.views.resolve()}
-    state = {"last": time.monotonic(), "pinged": False, "bye": None}
+    state = {"last": time.monotonic(), "pinged": False, "bye": None, "client": {}, "py0": _code_stamp()[1]}
     data_ok = {roots["/data/"] / f for f in DATA_FILES}
     types = {".wasm": "application/wasm", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css",
              ".html": "text/html; charset=utf-8", ".json": "application/json", ".rrd": "application/octet-stream",
@@ -285,8 +333,16 @@ def make_server(s: Session, port: int = 0) -> tuple[ThreadingHTTPServer, str, di
                     return self._send(WEB / "index.html", False)
                 if path == "/api/ping":
                     state["last"], state["pinged"] = time.monotonic(), True
-                    self.send_response(204)
+                    _note_client(s, state, urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query))
+                    web, py = _code_stamp()
+                    body = json.dumps({"web": web, "restart": py > state["py0"]}).encode()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.send_header("Cache-Control", "no-store")
                     self.end_headers()
+                    if self.command != "HEAD":
+                        self.wfile.write(body)
                     return None
                 for prefix, base in roots.items():
                     if not path.startswith(prefix):
@@ -314,27 +370,49 @@ def make_server(s: Session, port: int = 0) -> tuple[ThreadingHTTPServer, str, di
     return server, f"http://127.0.0.1:{server.server_address[1]}/", state
 
 
-def _open_window(url: str) -> None:
+def edge_path() -> str | None:
+    """Microsoft Edge (it ships with Windows), or None."""
     import os
-    import webbrowser
 
     for edge in (shutil.which("msedge"), os.path.expandvars(r"%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe"),
                  os.path.expandvars(r"%ProgramFiles%\Microsoft\Edge\Application\msedge.exe")):
         if edge and Path(edge).exists():
-            subprocess.Popen([edge, f"--app={url}", "--window-size=1720,1020"], stdout=subprocess.DEVNULL,
-                             stderr=subprocess.DEVNULL)
-            return
+            return edge
+    return None
+
+
+def _open_window(url: str) -> None:
+    import webbrowser
+
+    edge = edge_path()
+    if edge:
+        subprocess.Popen([edge, f"--app={url}", "--window-size=1720,1020"], stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL)
+        return
     webbrowser.open(url)
 
 
-def serve(s: Session, port: int = 0, open_window: bool = True, play: bool = False) -> int:
+def view_query(*, play: bool = False, at: str | None = None, panels: str | None = None, hide: bool = False,
+               menu: bool = False, shot: bool = False) -> str:
+    """The page address for a view: ?t=13:45:10&open=over,radar ... (the page reads the same names)."""
+    q = {k: v for k, v in (("play", "1" if play else None), ("t", at), ("open", panels), ("panels", "0" if hide else None),
+                           ("menu", "1" if menu else None), ("shot", "1" if shot else None)) if v is not None}
+    return "?" + urllib.parse.urlencode(q, safe=":,") if q else ""
+
+
+def ensure_built(s: Session) -> None:
     if not all((s.views / f).exists() for f in ("replay.rrd", "replay_hud.rbl", "hud/data.json")):
         from domeware import replay
 
         print("building the replay first ...")
         replay.build(s)
+
+
+def serve(s: Session, port: int = 0, open_window: bool = True, play: bool = False, at: str | None = None,
+          panels: str | None = None, hide: bool = False) -> int:
+    ensure_built(s)
     server, url, state = make_server(s, port)
-    url += "?play=1" if play else ""
+    url += view_query(play=play, at=at, panels=panels, hide=hide)
 
     def watchdog():
         """Stop 15 s after the window says bye (unless it was a reload), 3 min after the last ping (a hidden or

@@ -16,7 +16,9 @@
   dw report SESSION           views/report.md
   dw view SESSION             open the replay (loopback only); --start plays the test from its start
   dw app                      the same in one window: pick a session, press a button
-  dw hud SESSION              the replay HUD: 3D plus clock, weather, equipment and timeline (--play starts it)
+  dw hud SESSION              the replay HUD: 3D plus clock, weather, equipment and timeline (--play starts it;
+                              --at 13:45:10 --open over,radar opens that moment with those instruments)
+  dw shots SESSION            full-resolution pictures of the HUD at the user's window size (same --at/--open)
   dw check SESSION            in the field: is the data complete? (offline, seconds)
   dw note SESSION "text"      a team note on the UTC clock (--at 09:14:30); shows in the replay and report
   dw seal SESSION             record the hash of every file the team brought (seal.json)
@@ -40,6 +42,25 @@ import sys
 from pathlib import Path
 
 from domeware.session import Session
+
+
+def _session_path(p: Path) -> Path:
+    """A session folder, or only its name when it is in the usual place (domeware-data/sessions)."""
+    if not p.exists() and len(p.parts) == 1:
+        from domeware.overview import DEFAULT_ROOT
+
+        if (DEFAULT_ROOT / p).is_dir():
+            return DEFAULT_ROOT / p
+    return p
+
+
+def _size(text: str) -> tuple[int, int, float]:
+    from domeware.shots import parse_size
+
+    try:
+        return parse_size(text)
+    except ValueError as e:
+        raise SystemExit(str(e)) from None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -77,6 +98,15 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--play", action="store_true", help="start playing the activity")
     p.add_argument("--no-open", action="store_true", help="serve only, open no window")
     p.add_argument("--port", type=int, default=0)
+    for q in (p, shots := sub.add_parser("shots", help="full-resolution pictures of the HUD, for a review in chat")):
+        q.add_argument("--at", help="open at this moment, UTC HH:MM:SS")
+        q.add_argument("--open", help="instruments: over,drones,radar,log,atmo,equip | all | none")
+        q.add_argument("--hide", action="store_true", help="panels hidden: the map only")
+    shots.add_argument("session", type=Path)
+    shots.add_argument("--size", action="append", help="1720x988, or 1536x816@1.25 with the screen scale; repeat for "
+                       "more sizes (default: the window size the HUD last reported)")
+    shots.add_argument("--menu", action="store_true", help="with the menu page open")
+    shots.add_argument("--wait", type=float, default=60.0, help="seconds to wait for the 3D to draw")
     p = sub.add_parser("view", help="open the replay")
     p.add_argument("session", type=Path)
     p.add_argument("--start", action="store_true", help="play the test from its start")
@@ -140,7 +170,7 @@ def main(argv: list[str] | None = None) -> int:
         print(df.to_string(index=False) if len(df) else "no sessions")
         print(f"index: {(a.root or DEFAULT_ROOT) / 'index.html'}")
         return 0
-    s = Session(a.session)
+    s = Session(_session_path(a.session))
     if a.cmd in ("seal", "sync"):
         from domeware import custody
 
@@ -259,7 +289,14 @@ def main(argv: list[str] | None = None) -> int:
     if a.cmd == "hud":
         from domeware.hud import serve
 
-        return serve(s, port=a.port, open_window=not a.no_open, play=a.play)
+        return serve(s, port=a.port, open_window=not a.no_open, play=a.play, at=a.at, panels=a.open, hide=a.hide)
+    if a.cmd == "shots":
+        from domeware.shots import take
+
+        sizes = [_size(x) for x in a.size] if a.size else None
+        for f in take(s, sizes=sizes, at=a.at, panels=a.open, hide=a.hide, menu=a.menu, wait_s=a.wait):
+            print(f)
+        return 0
     if a.cmd == "view":
         from domeware.viewer import open_replay
 

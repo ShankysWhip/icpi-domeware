@@ -53,6 +53,12 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .crumbs em { font-style: normal; font: 600 9.5px var(--sans); letter-spacing: .18em; color: var(--amber);
   background: rgba(194, 123, 12, .1); padding: 3px 7px; border-radius: 2px; }
 .status { display: flex; gap: 6px; margin-left: auto; }
+.update { margin-left: auto; height: 26px; padding: 0 11px; border-radius: var(--r); border: 1px solid rgba(194, 123, 12, .45);
+  background: rgba(194, 123, 12, .1); color: #8a5708; font: 650 9.5px var(--sans); letter-spacing: .12em; text-transform: uppercase; }
+.update[data-kind="reload"]:hover { background: rgba(194, 123, 12, .18); }
+.update[data-kind="restart"] { cursor: default; }
+.update[hidden] { display: none; }
+.update:not([hidden]) + .status { margin-left: 0; }
 .stat { display: inline-flex; align-items: center; gap: 7px; height: 26px; padding: 0 10px 0 9px; border: 1px solid var(--line);
   border-radius: var(--r); background: var(--panel); font-size: 9.5px; letter-spacing: .14em; color: var(--muted); }
 .stat b { color: var(--text); font-weight: 650; }
@@ -477,9 +483,20 @@ body.solid .glass { background: rgba(255, 255, 255, .97); -webkit-backdrop-filte
 .dr-act small { display: block; color: var(--muted); font-size: 11px; margin-top: 1px; }
 .dr-act.off { opacity: .55; pointer-events: none; }
 .dr-act.off svg { stroke: var(--dim); }
+.copybtn { height: 28px; padding: 0 12px; flex: none; border: 1px solid var(--line-2); border-radius: var(--r); background: #fff;
+  font: 650 10px var(--sans); letter-spacing: .1em; text-transform: uppercase; color: var(--accent-2); }
+.copybtn:hover { border-color: var(--accent); }
 .dr-keys { display: grid; grid-template-columns: auto 1fr; gap: 7px 12px; align-items: center; font-size: 12px; color: var(--muted); padding-top: 4px; }
 .dr-keys kbd { justify-self: start; }
 .dr-foot { flex: none; padding: 11px 18px; border-top: 1px solid var(--line); font: 10px var(--mono); color: var(--dim); line-height: 1.6; }
+
+.toast { position: fixed; z-index: 70; left: 50%; top: calc(var(--top) + 12px); transform: translateX(-50%); max-width: 80vw;
+  padding: 9px 14px; border-radius: var(--r); background: var(--text); color: #fff; font: 12px var(--mono);
+  box-shadow: 0 12px 30px rgba(16, 24, 40, .3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.toast[hidden] { display: none; }
+/* dw shots: a still picture (no motion, no focus rings) */
+body.shot *, body.shot *::before, body.shot *::after { animation: none !important; transition: none !important; }
+body.shot :focus-visible { outline: none; }
 
 /* ---------- tooltip & lightbox ---------- */
 .tip { position: fixed; z-index: 50; pointer-events: none; max-width: 380px; padding: 9px 11px; border-radius: var(--r); background: var(--panel);
