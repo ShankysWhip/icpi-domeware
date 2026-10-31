@@ -1,5 +1,5 @@
 // domeware HUD · The mission clock card, the instruments (overview, drones, radar, events) and the rail.
-import { $, S, SHOT, at, bisect, clamp, compass, dist, droneAt, dur, fx, h, hms, inFlight, onPress, pad, parts, placeAll, seg, sv, zone } from "./core.mjs";
+import { $, QUIET, S, at, bisect, clamp, compass, dist, droneAt, dur, fx, h, hms, inFlight, onPress, pad, parts, placeAll, seg, sv, zone } from "./core.mjs";
 import { FX, frame, seek, setGlass, setTz } from "./app.mjs";
 import { Atmo } from "./weather.mjs";
 import { Equip } from "./equipment.mjs";
@@ -315,7 +315,7 @@ export const Panels = {
   meta(k, text) { this.cards[k].meta.textContent = text; },
   restore(want = {}) {  // what was open last time on this computer; a view in the address wins and is not saved
     try {
-      const p = SHOT ? null : JSON.parse(localStorage.getItem(PREFS) || "null");
+      const p = QUIET ? null : JSON.parse(localStorage.getItem(PREFS) || "null");
       if (p && Array.isArray(p.open)) S.open = new Set(p.open.filter((k) => INSTR.some((it) => it.k === k)));
       else if (innerHeight < 880) S.open = new Set(["over"]);  // a smaller screen starts with more map
       if (p && p.away) S.away = true;
@@ -327,7 +327,7 @@ export const Panels = {
     for (const it of INSTR) this.sync(it.k);
     this.away(S.away, false);
   },
-  save() { if (!SHOT) try { localStorage.setItem(PREFS, JSON.stringify({ open: [...S.open], away: S.away, glass: S.glass })); } catch { /* private window */ } },
+  save() { if (!QUIET) try { localStorage.setItem(PREFS, JSON.stringify({ open: [...S.open], away: S.away, glass: S.glass })); } catch { /* private window */ } },
   is(k) { return S.open.has(k) && !S.away; },
   toggle(k) { this.set(k, !S.open.has(k)); },
   set(k, on) {

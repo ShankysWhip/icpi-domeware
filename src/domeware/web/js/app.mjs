@@ -1,5 +1,5 @@
 // domeware HUD · The app: viewer bridge, one clock, status bar, views in the address, keys and start.
-import { $, S, SHOT, Tip, at, clamp, esc, h, ink, padRange, parts, placeAll, qs } from "./core.mjs";
+import { $, QUIET, S, SHOT, Tip, at, clamp, esc, h, ink, padRange, parts, placeAll, qs } from "./core.mjs";
 import { Clock, Drones, INSTR, Log, Over, Panels, Radar } from "./panels.mjs";
 import { Atmo } from "./weather.mjs";
 import { Equip } from "./equipment.mjs";
@@ -99,7 +99,7 @@ export function frame(now) {
       FX.ema += (dt - FX.ema) * 0.05;
       if (++FX.n > 240) {
         FX.fps = 1000 / FX.ema;
-        if (S.glass && !FX.manual && !SHOT && FX.ema > 30) setGlass(false);
+        if (S.glass && !FX.manual && !QUIET && FX.ema > 30) setGlass(false);
       }
     }
   }
@@ -220,8 +220,35 @@ export const Ver = {
     b.hidden = false;
   },
 };
+// presentation: full screen and the pointer hides when it rests (for filming, or a big screen in a meeting)
+export const Present = {
+  on: false,
+  timer: null,
+  set(on) {
+    this.on = on;
+    document.body.classList.toggle("present", on);
+    if (on) {
+      if (!document.fullscreenElement) document.documentElement.requestFullscreen?.().catch(() => {});
+      Tip.hide();
+      this.rest();
+    } else {
+      clearTimeout(this.timer);
+      document.body.classList.remove("idle");
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    }
+    if (Drawer.presentSw) Drawer.presentSw.setAttribute("aria-checked", String(on));
+  },
+  rest() {
+    document.body.classList.remove("idle");
+    clearTimeout(this.timer);
+    if (this.on) this.timer = setTimeout(() => document.body.classList.add("idle"), 2000);
+  },
+};
+document.addEventListener("pointermove", () => { if (Present.on) Present.rest(); });
+document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement && Present.on) Present.set(false); });
+
 export function sendPing() {  // keeps the server running; reports the window size and playback speed (kept on this computer only)
-  const q = SHOT ? "" : `?w=${innerWidth}&h=${innerHeight}&dpr=${devicePixelRatio.toFixed(2)}&glass=${S.glass ? 1 : 0}`
+  const q = QUIET ? "" : `?w=${innerWidth}&h=${innerHeight}&dpr=${devicePixelRatio.toFixed(2)}&glass=${S.glass ? 1 : 0}`
     + (FX.fps ? `&fps=${FX.fps.toFixed(1)}` : "");
   fetch(`/api/ping${q}`, { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).then(Ver.check).catch(() => {});
 }
@@ -232,7 +259,7 @@ export function bindHelp() {
   if (!b) return;
   const html = '<b>Keys</b><div class="keys2"><kbd>Space</kbd><span>play / pause</span><kbd>← →</kbd><span>5 s back / forward</span>'
     + '<kbd>Shift</kbd><span>with ← → : 60 s</span><kbd>Home End</kbd><span>start / end of the activity</span>'
-    + '<kbd>1 – 6</kbd><span>open or close an instrument</span><kbd>P</kbd><span>hide or show the panels</span><kbd>M</kbd><span>menu</span><kbd>C</kbd><span>copy this view</span>'
+    + '<kbd>1 – 6</kbd><span>open or close an instrument</span><kbd>P</kbd><span>hide or show the panels</span><kbd>M</kbd><span>menu</span><kbd>C</kbd><span>copy this view</span><kbd>F</kbd><span>presentation (full screen)</span>'
     + '<kbd>Wheel</kbd><span>zoom the timeline</span><kbd>Dbl-click</kbd><span>fit the activity</span></div>'
     + `<div class="prov">Data built ${esc(String(S.data.generated_utc).slice(0, 16).replace("T", " "))} UTC<br>Session ${esc(S.data.session)}`
     + ` · replay ${esc(String(S.data.recording_id).slice(0, 8))}</div>`;
@@ -255,6 +282,7 @@ export function bindKeys() {
     else if (e.code === "KeyM" && plain && !box) Drawer.toggle();
     else if (e.code === "KeyC" && plain && !box) View.copy();
     else if (e.code === "KeyR" && plain && !box) View.reload();
+    else if (e.code === "KeyF" && plain && !box) Present.set(!Present.on);
     else if (e.code === "Escape") { if (!box && Drawer.isOpen) Drawer.close(); else Lightbox.close(); }
     else used = false;
     if (used) { e.preventDefault(); e.stopPropagation(); }
@@ -311,7 +339,7 @@ export async function init() {
   bindHelp();
   window.addEventListener("resize", onResize);
   refresh(true);
-  window.__hud.R = { refresh, TL, Clock, Panels, Over, Drones, Radar, Log, Atmo, Equip, Drawer, View };  // for timing checks from the console
+  window.__hud.R = { refresh, TL, Clock, Panels, Over, Drones, Radar, Log, Atmo, Equip, Drawer, View, setGlass, setPlaying, Present };  // for timing checks from the console
   requestAnimationFrame(frame);
   setTimeout(placeAll, 300);  // fonts settle, then the sliding pills find their places
   sendPing();

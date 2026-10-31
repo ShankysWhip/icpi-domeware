@@ -2,6 +2,7 @@
 
 export const qs = new URLSearchParams(location.search);
 export const SHOT = qs.get("shot") === "1";  // dw shots: a picture is being taken (no motion, nothing saved or reported)
+export const QUIET = SHOT || qs.get("bench") === "1";  // shots and the speed bench: nothing saved, reported or switched by itself
 export const $ = (sel, root = document) => root.querySelector(sel);
 export const SVGNS = "http://www.w3.org/2000/svg";
 
