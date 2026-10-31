@@ -34,7 +34,7 @@ from domeware.session import Session
 
 WEB = Path(__file__).parent / "web"
 MARGIN = pd.Timedelta("15min")  # the replay keeps weather this far around the activity
-DATA_FILES = {"replay.rrd", "replay_hud.rbl"}
+DATA_FILES = {"replay.rrd", "replay_hud.rbl", "report.html", "session.kml"}  # the menu links the report and the KML
 AIRBORNE_M = 2.0  # as dw compare: airborne from the first to the last moment above 2 m over take-off
 TZ_LOCAL = "Europe/Helsinki"
 
@@ -251,7 +251,8 @@ def make_server(s: Session, port: int = 0) -> tuple[ThreadingHTTPServer, str, di
     data_ok = {roots["/data/"] / f for f in DATA_FILES}
     types = {".wasm": "application/wasm", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css",
              ".html": "text/html; charset=utf-8", ".json": "application/json", ".rrd": "application/octet-stream",
-             ".rbl": "application/octet-stream", ".jpg": "image/jpeg", ".png": "image/png", ".svg": "image/svg+xml"}
+             ".rbl": "application/octet-stream", ".jpg": "image/jpeg", ".png": "image/png", ".svg": "image/svg+xml",
+             ".kml": "application/vnd.google-earth.kml+xml"}
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):  # quiet: the terminal is for the user
@@ -264,6 +265,8 @@ def make_server(s: Session, port: int = 0) -> tuple[ThreadingHTTPServer, str, di
             self.send_header("Content-Length", str(f.stat().st_size))
             self.send_header("Cache-Control", "max-age=86400" if cache else "no-store")
             self.end_headers()
+            if self.command == "HEAD":  # the menu asks whether a file exists without fetching it
+                return
             with f.open("rb") as fh:
                 shutil.copyfileobj(fh, self.wfile, 1 << 20)
 
@@ -303,6 +306,8 @@ def make_server(s: Session, port: int = 0) -> tuple[ThreadingHTTPServer, str, di
                 return None
             self.send_error(404)
             return None
+
+        do_HEAD = do_GET  # noqa: N815 - same gate, headers only
 
     server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     server.daemon_threads = True

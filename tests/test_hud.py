@@ -56,6 +56,26 @@ def test_server_serves_the_page_the_viewer_and_this_replay_only(server):
         assert _get(server + bad)[0] == 404, bad
 
 
+def test_menu_links_the_report_and_the_kml_only_when_they_exist(server, tmp_path):
+    def head(path):
+        try:
+            with urllib.request.urlopen(urllib.request.Request(server + path, method="HEAD"), timeout=10) as r:
+                return r.status, r.headers.get("Content-Type"), r.read()
+        except urllib.error.HTTPError as e:
+            return e.code, None, b""
+
+    views = tmp_path / "S" / "views"
+    assert head("data/report.html")[0] == 404  # not made yet: the menu says how to make it
+    (views / "report.html").write_text("<p>report</p>", encoding="utf-8")
+    (views / "session.kml").write_text("<kml/>", encoding="utf-8")
+    (views / "replay_stats.json").write_text("{}", encoding="utf-8")
+    code, ctype, body = head("data/report.html")
+    assert (code, body) == (200, b"") and ctype.startswith("text/html")  # HEAD: headers only
+    assert head("data/session.kml")[:2] == (200, "application/vnd.google-earth.kml+xml")
+    assert _get(server + "data/report.html")[2] == b"<p>report</p>"
+    assert _get(server + "data/replay_stats.json")[0] == 404  # the rest of views/ stays private
+
+
 def test_closing_window_says_bye(server):
     req = urllib.request.Request(server + "api/bye", data=b"", method="POST")
     with urllib.request.urlopen(req, timeout=10) as r:

@@ -87,7 +87,7 @@ const niceCeil = (v) => RINGS.find((r) => r >= v) || RINGS[RINGS.length - 1];
 
 // ---------- state ----------
 const S = {
-  data: null, t: 0, playing: false, speed: 1, loop: true, tz: "UTC", mode: "overview", intel: "atmo",
+  data: null, t: 0, playing: false, speed: 1, loop: true, tz: "UTC", open: new Set(["over", "atmo"]), away: false, glass: true,
   wx: { wind: true, gust: true, dir: true, temp: true, rh: false, pressure: false },
   filter: "all", sel: null, scope: "site", drone: null, full: [0, 1], act: [0, 1], view: [0, 1],
 };
@@ -155,9 +155,9 @@ function onSelection(items) {
     if (it.type !== "entity" || !it.entity_path) continue;
     const p = "/" + String(it.entity_path).replace(/^\/+/, "");
     const eq = S.data.equipment.find((e) => p === e.entity || p.startsWith(e.entity + "/"));
-    if (eq) { Intel.show("equip"); Equip.select(eq.id, true); return; }
+    if (eq) { Panels.set("equip", true); Equip.select(eq.id, true); return; }
     const d = S.data.drones.find((x) => p === x.entity || p.startsWith(x.entity + "/"));
-    if (d) { S.drone = d.name; Clock.setMode("drones"); Equip.renderScope(); return; }
+    if (d) { S.drone = d.name; Panels.set("drones", true); Drones.update(); Equip.renderScope(); return; }
   }
 }
 
@@ -170,10 +170,14 @@ function seek(ms) {
 function setPlaying(on) {
   if (on && S.t >= S.act[1] - 200) S.t = S.act[0];
   S.playing = on;
+  FX.ema = 16.7;
+  FX.n = 0;
   TL.playIcon();
+  Clock.led.classList.toggle("on", on);
   if (!on) push(true);
 }
 let lastFrame = performance.now(), lastUi = 0;
+const FX = { ema: 16.7, n: 0, manual: false };  // frame time while playing
 function frame(now) {
   const dt = Math.min(250, now - lastFrame);
   lastFrame = now;
@@ -181,15 +185,23 @@ function frame(now) {
     S.t += dt * S.speed;
     if (S.t >= S.act[1]) { if (S.loop) S.t = S.act[0]; else { S.t = S.act[1]; setPlaying(false); } }
     push();
+    if (S.glass && !FX.manual && dt < 100 && !document.hidden) {  // glass costs GPU time over the moving 3D: if playback drags, go solid
+      FX.ema += (dt - FX.ema) * 0.05;
+      if (++FX.n > 240 && FX.ema > 30) setGlass(false);
+    }
   }
   TL.playhead();
   if (now - lastUi > 80) { lastUi = now; refresh(false); }
   requestAnimationFrame(frame);
 }
-function refresh(full) {
+function refresh(full) {  // only the open instruments are kept up to date
   Clock.update();
-  Atmo.update();
-  Equip.updateLive();
+  if (Panels.is("over")) Over.update();
+  if (Panels.is("drones")) Drones.update();
+  if (Panels.is("radar")) Radar.update();
+  if (Panels.is("log")) Log.update();
+  if (Panels.is("atmo")) Atmo.update();
+  if (Panels.is("equip")) Equip.updateLive();
   if (full) TL.playhead();
 }
 
@@ -201,7 +213,7 @@ function seg(options, value, onChange, cls = "") {
   for (const [val, label, extra, disabled] of options) {
     const b = h("button", { class: val === value ? "on" : "", "data-v": val, role: "radio", "aria-checked": String(val === value),
       disabled: disabled ? true : null }, label, extra ? h("em", {}, extra) : null);
-    b.addEventListener("click", () => { el.set(val); onChange(val); });
+    onPress(b, () => { if (b.disabled || el.value === val) return; el.set(val); onChange(val); });
     el.append(b);
   }
   el.value = value;
@@ -220,7 +232,7 @@ function seg(options, value, onChange, cls = "") {
   requestAnimationFrame(el.place);
   return el;
 }
-function placeAll() { for (const s of document.querySelectorAll(".seg")) if (s.place) s.place(); Intel.underline(); }
+function placeAll() { for (const s of document.querySelectorAll(".seg")) if (s.place) s.place(); }
 const Tip = {
   el: null,
   show(html, x, y) {
@@ -256,97 +268,39 @@ const Clock = {
     this.time = h("div", { class: "time" }, "--:--:--");
     this.frac = h("span", {}, ".000");
     this.zone = h("span", {}, "UTC");
-    this.date = h("div", { class: "clock-date" });
-    this.tp = h("b", {}, "+00:00:00");
-    this.of = h("span", { class: "of" });
+    this.date = h("span", { class: "date" });
+    this.tp = h("span", {}, "+00:00:00");
+    this.of = h("span", {});
     this.phase = h("span", { class: "phase" });
     this.fill = h("i", { class: "fill" });
+    this.led = h("i", { class: "led", title: "Lit while the replay plays" });
     const bar = h("div", { class: "progress", title: "Click to jump within the activity" }, this.fill);
     const [a, b] = S.act;
     for (const r of S.data.runs) bar.append(h("i", { class: "mk", style: `left:${((r.start - a) / (b - a)) * 100}%` }));
     for (const sc of S.data.screens) if (sc.t >= a && sc.t <= b) bar.append(h("i", { class: "mk shot", style: `left:${((sc.t - a) / (b - a)) * 100}%` }));
     bar.addEventListener("click", (e) => { const r = bar.getBoundingClientRect(); seek(a + ((e.clientX - r.left) / r.width) * (b - a)); });
-    this.modeSeg = seg([["overview", "Overview"], ["drones", "Drones", S.data.drones.length || null], ["radar", "Radar"], ["log", "Events", S.data.events.length || null]],
-      S.mode, (m) => this.setMode(m));
-    this.readout = h("div", { class: "readout" });
+    this.tzSeg = seg([["UTC", "UTC"], ["LOCAL", "Local"]], S.tz, setTz);
     root.append(
-      h("div", { class: "card-head" }, h("span", { class: "label" }, "Mission clock"),
-        seg([["UTC", "UTC"], ["LOCAL", "Local"]], "UTC", (v) => { S.tz = v; TL.render(); Atmo.render(); refresh(true); })),
-      h("div", { class: "clock-main" }, this.time, h("div", { class: "time-sub" }, this.frac, this.zone)),
-      this.date,
-      h("div", { class: "tplus" }, h("span", { class: "k" }, "T"), this.tp, this.of, this.phase),
-      bar,
-      h("div", { class: "mode-row" }, this.modeSeg),
-      this.readout,
-    );
-    this.setMode(S.mode);
-  },
-  setMode(m) {
-    S.mode = m;
-    this.modeSeg.set(m);
-    this.readout.replaceChildren();
-    this.cells = {};
-    const d = S.data;
-    if (m === "overview") {
-      const tiles = h("div", { class: "tiles" });
-      for (const [k, label] of [["wind", "WIND"], ["gust", "GUST"], ["temp", "TEMP"], ["air", "AIRBORNE"], ["radar", "RADAR HOLD"], ["ev", "EVENTS"]]) {
-        const v = h("div", { class: "v" }), s = h("div", { class: "s" }), t = h("div", { class: "tile" }, h("div", { class: "k" }, label), v, s);
-        this.cells[k] = { t, v, s };
-        tiles.append(t);
-      }
-      this.readout.append(tiles);
-    } else if (m === "drones") {
-      if (!d.drones.length) {
-        const hd = d.flights_header[0];
-        this.readout.append(h("div", { class: "empty" }, hd
-          ? `${hd.name}: the flight log is encrypted, so only its header is known — ${dist(hd.distance_m)} flown, max ${fx(hd.max_height_m, 0)} m high, max ${fx(hd.max_speed_ms, 1)} m/s. The path appears here once the log is decoded.`
-          : "No drone paths in this session."));
-        return;
-      }
-      const rows = h("div", { class: "rows" });
-      rows.append(h("div", { class: "drow h", style: "cursor:default" }, h("i"), h("span", {}, "DRONE"), h("span", {}, "RANGE"), h("span", {}, "ALT"), h("span", {}, "SPEED"), h("span", { style: "justify-self:end" }, "RADAR")));
-      for (const dr of d.drones) {
-        const cells = { range: h("span"), alt: h("span"), spd: h("span"), badge: h("span", { class: "badge off" }, "—") };
-        const row = h("div", { class: "drow" }, h("i", { class: "bar", style: `background:${dr.ui}` }),
-          h("span", { class: "n", title: dr.name }, dr.name), cells.range, cells.alt, cells.spd, cells.badge);
-        row.addEventListener("click", () => { S.drone = S.drone === dr.name ? null : dr.name; Equip.renderScope(); this.update(); });
-        this.cells[dr.name] = { row, ...cells };
-        rows.append(row);
-      }
-      this.readout.append(rows);
-    } else if (m === "radar") {
-      if (!d.radar) {
-        this.readout.append(h("div", { class: "empty" }, d.status.drone_logs_encrypted || d.status.screens
-          ? "Radar data pending: the tracks arrive from the third party. Everything else in this session is ready."
-          : "No radar tracks in this session."));
-        return;
-      }
-      const big = h("div", { class: "big" }, "0"), tot = h("div", { class: "s" });
-      const top = h("div", { style: "display:flex;align-items:baseline;gap:12px;margin-bottom:10px" }, big,
-        h("div", {}, h("div", { class: "k label", style: "letter-spacing:.2em" }, "Tracks alive now"), tot));
-      const bars = h("div", { class: "bars" });
-      for (const dr of d.drones) {
-        const share = dr.tracked_share ?? 0;
-        bars.append(h("div", { class: "hbar" },
-          h("div", {}, h("div", { class: "t" }, h("b", {}, dr.name), h("span", {}, dr.err_median_m !== null ? `median ${fx(dr.err_median_m, 1)} m off` : "never tracked")),
-            h("div", { class: "track" }, h("i", { style: `width:${share * 100}%;background:${dr.ui}` }))),
-          h("div", { class: "pct", style: `color:${share > 0.9 ? "var(--green)" : share > 0.5 ? "var(--amber)" : "var(--red)"}` }, `${Math.round(share * 100)}%`)));
-      }
-      this.cells.big = big;
-      this.cells.tot = tot;
-      this.readout.append(top, bars, d.drones.length ? h("div", { class: "legend-note" }, "Share of airborne seconds with a radar track on the drone.") : null);
-    } else if (m === "log") {
-      this.cells.log = h("div", { class: "log" });
-      this.readout.append(d.events.length ? this.cells.log : h("div", { class: "empty" }, "No events in this session."));
-    }
-    this.update();
+      h("div", { class: "card-head" }, h("span", { class: "label" }, this.led, "Mission clock"), h("i", { class: "rule" }), this.tzSeg),
+      h("div", { class: "body" },
+        h("div", { class: "clock-row" },
+          h("div", { class: "clock-main" }, this.time, h("div", { class: "time-sub" }, this.frac, this.zone)),
+          h("div", { class: "clock-t" }, h("b", {}, h("span", { class: "k" }, "T"), this.tp), this.of)),
+        h("div", { class: "clock-meta" }, this.date, this.phase),
+        bar));
+    // the same clock, small, on the map while the panels are hidden
+    this.miniT = h("b", {}, "--:--:--");
+    this.miniZ = h("span", {}, "UTC");
+    this.miniP = h("small", {});
+    $("#mini").append(this.miniT, this.miniZ, h("i"), this.miniP);
   },
   update() {
     const d = S.data, t = S.t, [a, b] = S.act;
     const p = parts(t, zone(), { timeZoneName: "shortOffset" });
-    this.time.textContent = `${p.hour}:${p.minute}:${p.second}`;
+    const time = `${p.hour}:${p.minute}:${p.second}`, zn = S.tz === "UTC" ? "UTC" : (p.timeZoneName || "LOCAL").toUpperCase();
+    this.time.textContent = time;
     this.frac.textContent = "." + pad(((t % 1000) + 1000) % 1000, 3);
-    this.zone.textContent = S.tz === "UTC" ? "UTC" : (p.timeZoneName || "LOCAL").toUpperCase();
+    this.zone.textContent = zn;
     this.date.textContent = `${p.weekday} ${p.day} ${p.month} ${p.year}`.toUpperCase();
     this.tp.textContent = dur(t - a);
     this.of.textContent = `/ ${dur(b - a, false)}`;
@@ -354,58 +308,197 @@ const Clock = {
     const run = d.runs.find((r) => t >= r.start && t <= r.end);
     const hd = d.flights_header.find((f) => t >= f.start && t <= f.end);
     this.phase.textContent = run ? `${run.id} · ${run.part}` : hd ? `${hd.name} airborne · log` : t < a ? "before activity" : t > b ? "after activity" : "";
-    const c = this.cells;
-    if (S.mode === "overview") {
-      const wx = d.weather;
-      const wind = wx ? at(wx.t, wx.wind, t) : null, gust = wx ? at(wx.t, wx.gust, t) : null, dir = wx ? at(wx.t, wx.dir, t) : null;
-      const temp = wx ? at(wx.t, wx.temp, t) : null, rh = wx ? at(wx.t, wx.rh, t) : null;
-      this.tile(c.wind, wind === null ? "—" : `${fx(wind)}<small>m/s</small>`, dir === null ? "no data" : `from ${compass(dir)} ${fx(dir, 0)}°`);
-      this.tile(c.gust, gust === null ? "—" : `${fx(gust)}<small>m/s</small>`, S.maxGust !== null ? `max ${fx(S.maxGust)} m/s` : "");
-      this.tile(c.temp, temp === null ? "—" : `${fx(temp)}<small>°C</small>`, rh === null ? "" : `humidity ${fx(rh, 0)} %`);
-      if (d.drones.length) {
-        const up = d.drones.filter((x) => inFlight(x, t));
-        const held = up.filter((x) => droneAt(x, "err", t) !== null);
-        this.tile(c.air, `${up.length}<small>/ ${d.drones.length}</small>`, "drones in the air", up.length ? "ok" : "");
-        if (d.radar) this.tile(c.radar, up.length ? `${held.length}<small>/ ${up.length}</small>` : "—", "tracked by the radar", up.length ? (held.length === up.length ? "ok" : "bad") : "");
-        else this.tile(c.radar, "PENDING", "no radar data yet", "wait");
-      } else {
-        const hd2 = d.flights_header[0];
-        this.tile(c.air, hd && hd2 ? "1<small>/ 1</small>" : hd2 ? "0<small>/ 1</small>" : "—", hd2 ? `${hd2.name} · path pending` : "no drone logs", hd ? "ok" : "");
-        this.tile(c.radar, d.radar ? `${this.alive(t)}` : "PENDING", d.radar ? "tracks alive" : "radar data pending", d.radar ? "" : "wait");
-      }
-      const past = d.events.filter((e) => e.t <= t);
-      this.tile(c.ev, `${past.length}<small>/ ${d.events.length}</small>`, past.length ? past[past.length - 1].text : "none yet");
-    } else if (S.mode === "drones" && d.drones.length) {
-      for (const dr of d.drones) {
-        const cc = c[dr.name], up = inFlight(dr, t), err = droneAt(dr, "err", t);
-        cc.row.classList.toggle("sel", S.drone === dr.name);
-        cc.range.textContent = up ? dist(droneAt(dr, "range", t)) : "—";
-        cc.alt.textContent = up ? `${fx(droneAt(dr, "height", t), 0)} m` : "—";
-        cc.spd.textContent = up ? `${fx(droneAt(dr, "speed", t), 1)}` : "—";
-        const [cls, txt] = !up ? ["off", "GROUND"] : !d.radar ? ["off", "NO DATA"] : err !== null ? ["ok", `TRK ${fx(err, 0)} m`] : ["bad", "LOST"];
-        cc.badge.className = `badge ${cls}`;
-        cc.badge.textContent = txt;
-      }
-    } else if (S.mode === "radar" && d.radar) {
-      c.big.textContent = String(this.alive(t));
-      c.tot.textContent = `${d.radar.tracks} tracks in the replay`;
-    } else if (S.mode === "log" && c.log) {
-      const past = d.events.filter((e) => e.t <= t).slice(-8).reverse();
-      const key = past.map((e) => e.t).join(",");
-      if (key !== this.logKey) {
-        this.logKey = key;
-        c.log.replaceChildren(...past.map((e, i) => h("div", { class: i === 0 && t - e.t < 4000 ? "new" : "", title: "Jump here", onclick: () => seek(e.t) },
-          h("span", {}, hms(e.t)), e.text)));
-        if (!past.length) c.log.append(h("div", {}, h("span", {}, "—"), "no events yet at this moment"));
+    if (S.away) { this.miniT.textContent = time; this.miniZ.textContent = zn; this.miniP.textContent = `T${dur(t - a)}`; }
+  },
+};
+
+// ---------- instruments ----------
+const SPARK = { wind: ["#0a8db6", 2], gust: ["#d48a0e", 2], temp: ["#b13c8b", 1.5] };  // colour, smallest range drawn
+const Over = {
+  build(root) {
+    const d = S.data;
+    this.c = {};
+    const tiles = h("div", { class: "tiles" });
+    for (const [k, label] of [["wind", "WIND"], ["gust", "GUST"], ["temp", "TEMP"], ["air", "AIRBORNE"], ["radar", "RADAR HOLD"], ["ev", "EVENTS"]]) {
+      const v = h("div", { class: "v" }), m = h("div", { class: "m" }), s = h("div", { class: "s" });
+      const t = h("div", { class: "tile" }, h("div", { class: "k" }, h("i"), label), v, m, s);
+      this.c[k] = { t, v, m, s };
+      tiles.append(t);
+    }
+    root.append(tiles);
+    // the last 15 minutes of weather, up to the current minute
+    for (const [k, [color]] of Object.entries(SPARK)) {
+      const c = this.c[k];
+      c.m.style.color = color;
+      c.area = sv("path", { class: "a" });
+      c.line = sv("path", { class: "l" });
+      c.dot = h("i", { class: "dot", hidden: true });
+      c.m.append(sv("svg", { viewBox: "0 0 100 16", preserveAspectRatio: "none" }, c.area, c.line), c.dot);
+    }
+    // one square per drone: in the air, and held by the radar
+    const flights = d.drones.length ? d.drones : d.flights_header, n = Math.min(24, flights.length);
+    for (const k of ["air", "radar"]) {
+      const c = this.c[k];
+      c.sq = [];
+      c.state = [];
+      if (k === "radar" && !d.radar) { c.m.append(h("div", { class: "pending", title: "Radar data pending" })); continue; }
+      const box = h("div", { class: "sq" });
+      for (let i = 0; i < n; i++) { const q = h("i", { title: flights[i].name }); box.append(q); c.sq.push(q); }
+      c.m.append(box);
+    }
+    // where the events fall in the activity
+    const [a, b] = S.act, strip = h("div", { class: "evstrip" });
+    this.marks = d.events.filter((e) => e.t >= a && e.t <= b).map((e) => {
+      const m = h("b", { style: `left:${((e.t - a) / (b - a)) * 100}%` });
+      strip.append(m);
+      return [e.t, m];
+    });
+    this.cur = h("i", { class: "cur" });
+    strip.append(this.cur);
+    this.c.ev.m.append(strip);
+    this.evN = -1;
+  },
+  spark(k, t) {
+    const wx = S.data.weather, c = this.c[k];
+    if (!wx || !wx[k]) return;
+    const m0 = Math.floor(t / 60000) * 60000;
+    if (m0 !== c.key) {  // redrawn once a minute (or after a jump); the dot moves every frame
+      c.key = m0;
+      c.t0 = m0 - 14 * 60000;
+      c.t1 = m0 + 60000;
+      const ts = wx.t, vs = wx[k], pts = [];
+      for (let i = Math.max(0, bisect(ts, c.t0 - 60000)); i < ts.length && ts[i] <= c.t1; i++) if (vs[i] !== null) pts.push([ts[i], vs[i]]);
+      c.lo = null;
+      c.line.setAttribute("d", "");
+      c.area.setAttribute("d", "");
+      if (pts.length > 1) {
+        let lo = Math.min(...pts.map((p) => p[1])), hi = Math.max(...pts.map((p) => p[1]));
+        const least = SPARK[k][1];
+        if (hi - lo < least) { const mid = (lo + hi) / 2; lo = mid - least / 2; hi = mid + least / 2; }
+        c.lo = lo;
+        c.hi = hi;
+        const X = (tt) => (((tt - c.t0) / (c.t1 - c.t0)) * 100).toFixed(2), Y = (v) => (1.5 + (1 - (v - lo) / (hi - lo)) * 13).toFixed(2);
+        const line = pts.map(([tt, v], i) => `${i ? "L" : "M"}${X(tt)},${Y(v)}`).join("");
+        c.line.setAttribute("d", line);
+        c.area.setAttribute("d", `${line}L${X(pts[pts.length - 1][0])},16L${X(pts[0][0])},16Z`);
       }
     }
+    const val = at(wx.t, wx[k], t);
+    if (val === null || c.lo === null) { c.dot.hidden = true; return; }
+    c.dot.hidden = false;
+    c.dot.style.left = `${clamp((t - c.t0) / (c.t1 - c.t0), 0, 1) * 100}%`;
+    c.dot.style.top = `${((1.5 + (1 - (val - c.lo) / (c.hi - c.lo)) * 13) / 16) * 100}%`;
+  },
+  squares(c, states) {  // touch only the squares that changed
+    states.forEach((st, i) => {
+      if (!c.sq[i] || c.state[i] === st) return;
+      c.state[i] = st;
+      const [cls, bg] = st.split("|");
+      c.sq[i].className = cls;
+      c.sq[i].style.background = bg || "";
+    });
+  },
+  update() {
+    const d = S.data, t = S.t, c = this.c, wx = d.weather;
+    const v = (k) => (wx && wx[k] ? at(wx.t, wx[k], t) : null);
+    const wind = v("wind"), gust = v("gust"), dir = v("dir"), temp = v("temp"), rh = v("rh");
+    this.tile(c.wind, wind === null ? "—" : `${fx(wind)}<small>m/s</small>`, dir === null ? "no data" : `from ${compass(dir)} ${fx(dir, 0)}°`);
+    this.tile(c.gust, gust === null ? "—" : `${fx(gust)}<small>m/s</small>`, S.maxGust !== null ? `max ${fx(S.maxGust)} m/s` : "");
+    this.tile(c.temp, temp === null ? "—" : `${fx(temp)}<small>°C</small>`, rh === null ? "" : `humidity ${fx(rh, 0)} %`);
+    for (const k of Object.keys(SPARK)) this.spark(k, t);
+    if (d.drones.length) {
+      const up = d.drones.map((x) => inFlight(x, t));
+      const held = d.drones.map((x, i) => up[i] && droneAt(x, "err", t) !== null);
+      const nUp = up.filter(Boolean).length, nHeld = held.filter(Boolean).length;
+      this.tile(c.air, `${nUp}<small>/ ${d.drones.length}</small>`, "drones in the air", nUp ? "ok" : "");
+      this.squares(c.air, up.map((u, i) => (u ? `on|${d.drones[i].ui}` : "")));
+      if (d.radar) {
+        this.tile(c.radar, nUp ? `${nHeld}<small>/ ${nUp}</small>` : "—", "tracked by the radar", nUp ? (nHeld === nUp ? "ok" : "bad") : "");
+        this.squares(c.radar, up.map((u, i) => (!u ? "" : held[i] ? "ok" : "bad")));
+      } else this.tile(c.radar, "PENDING", "no radar data yet", "wait");
+    } else {
+      const fl = d.flights_header.map((f) => t >= f.start && t <= f.end), nUp = fl.filter(Boolean).length, hd = d.flights_header[0];
+      this.tile(c.air, hd ? `${nUp}<small>/ ${fl.length}</small>` : "—", hd ? `${hd.name} · path pending` : "no drone logs", nUp ? "ok" : "");
+      this.squares(c.air, fl.map((u) => (u ? "on|var(--accent)" : "")));
+      if (d.radar) this.tile(c.radar, String(Radar.alive(t)), "tracks alive", "");
+      else this.tile(c.radar, "PENDING", "radar data pending", "wait");
+    }
+    const past = d.events.filter((e) => e.t <= t);
+    this.tile(c.ev, `${past.length}<small>/ ${d.events.length}</small>`, past.length ? past[past.length - 1].text : "none yet");
+    if (past.length !== this.evN) { this.evN = past.length; for (const [et, m] of this.marks) m.classList.toggle("past", et <= t); }
+    const [a, b] = S.act;
+    this.cur.style.left = `${clamp((t - a) / (b - a), 0, 1) * 100}%`;
   },
   tile(cell, value, sub, state = "") {
-    if (!cell) return;
-    cell.v.innerHTML = value;
-    cell.s.textContent = sub;
-    cell.s.title = sub;
-    cell.t.className = `tile ${state}`;
+    if (cell.vh !== value) { cell.vh = value; cell.v.innerHTML = value; }
+    if (cell.sh !== sub) { cell.sh = sub; cell.s.textContent = sub; cell.s.title = sub; }
+    const cls = `tile ${state}`;
+    if (cell.t.className !== cls) cell.t.className = cls;
+  },
+};
+const Drones = {
+  c: {},
+  build(root) {
+    const d = S.data;
+    if (!d.drones.length) {
+      const hd = d.flights_header[0];
+      root.append(h("div", { class: "empty" }, hd
+        ? `${hd.name}: the flight log is encrypted, so only its header is known — ${dist(hd.distance_m)} flown, max ${fx(hd.max_height_m, 0)} m high, max ${fx(hd.max_speed_ms, 1)} m/s. The path appears here once the log is decoded.`
+        : "No drone paths in this session."));
+      return;
+    }
+    const rows = h("div", { class: "rows" });
+    rows.append(h("div", { class: "drow h" }, h("i"), h("span", {}, "DRONE"), h("span", {}, "RANGE"), h("span", {}, "ALT"), h("span", {}, "SPEED"), h("span", { style: "justify-self:end" }, "RADAR")));
+    for (const dr of d.drones) {
+      const cells = { range: h("span"), alt: h("span"), spd: h("span"), badge: h("span", { class: "badge off" }, "—") };
+      const row = h("div", { class: "drow", title: `${dr.name}: click to mark it on the equipment scope` }, h("i", { class: "bar", style: `background:${dr.ui}` }),
+        h("span", { class: "n" }, dr.name), cells.range, cells.alt, cells.spd, cells.badge);
+      row.addEventListener("click", () => { S.drone = S.drone === dr.name ? null : dr.name; Equip.renderScope(); this.update(); });
+      this.c[dr.name] = { row, ...cells };
+      rows.append(row);
+    }
+    root.append(rows);
+  },
+  update() {
+    const d = S.data, t = S.t;
+    for (const dr of d.drones) {
+      const cc = this.c[dr.name], up = inFlight(dr, t), err = droneAt(dr, "err", t);
+      cc.row.classList.toggle("sel", S.drone === dr.name);
+      cc.range.textContent = up ? dist(droneAt(dr, "range", t)) : "—";
+      cc.alt.textContent = up ? `${fx(droneAt(dr, "height", t), 0)} m` : "—";
+      cc.spd.textContent = up ? fx(droneAt(dr, "speed", t), 1) : "—";
+      const [cls, txt] = !up ? ["off", "GROUND"] : !d.radar ? ["off", "NO DATA"] : err !== null ? ["ok", `TRK ${fx(err, 0)} m`] : ["bad", "LOST"];
+      cc.badge.className = `badge ${cls}`;
+      cc.badge.textContent = txt;
+    }
+  },
+};
+const Radar = {
+  build(root) {
+    const d = S.data;
+    if (!d.radar) {
+      root.append(h("div", { class: "empty" }, d.status.drone_logs_encrypted || d.status.screens
+        ? "Radar data pending: the tracks arrive from the third party. Everything else in this session is ready."
+        : "No radar tracks in this session."));
+      return;
+    }
+    this.big = h("div", { class: "big" }, "0");
+    this.tot = h("div", { class: "s" });
+    const bars = h("div", { class: "bars" });
+    for (const dr of d.drones) {
+      const share = dr.tracked_share ?? 0;
+      bars.append(h("div", { class: "hbar" },
+        h("div", {}, h("div", { class: "t" }, h("b", {}, dr.name), h("span", {}, dr.err_median_m !== null ? `median ${fx(dr.err_median_m, 1)} m off` : "never tracked")),
+          h("div", { class: "track" }, h("i", { style: `width:${share * 100}%;background:${dr.ui}` }))),
+        h("div", { class: "pct", style: `color:${share > 0.9 ? "var(--green)" : share > 0.5 ? "var(--amber)" : "var(--red)"}` }, `${Math.round(share * 100)}%`)));
+    }
+    root.append(h("div", { class: "rtop" }, this.big, h("div", {}, h("div", { class: "k" }, "Tracks alive now"), this.tot)), bars,
+      d.drones.length ? h("div", { class: "legend-note" }, "Share of airborne seconds with a radar track on the drone.") : null);
+  },
+  update() {
+    if (!this.big) return;
+    this.big.textContent = String(this.alive(S.t));
+    this.tot.textContent = `${S.data.radar.tracks} tracks in the replay`;
   },
   alive(t) {
     const r = S.data.radar;
@@ -414,36 +507,140 @@ const Clock = {
     return i >= 0 && i < r.alive.length ? r.alive[i] : 0;
   },
 };
-
-// ---------- intel card: tabs ----------
-const Intel = {
-  build() {
-    const tabs = $("#intelTabs");
-    this.b = {
-      atmo: h("button", { onclick: () => this.show("atmo") }, "Weather"),
-      equip: h("button", { onclick: () => this.show("equip") }, "Equipment", h("em", {}, String(S.data.equipment.length))),
-    };
-    tabs.setAttribute("role", "tablist");
-    for (const b of Object.values(this.b)) b.setAttribute("role", "tab");
-    this.line = h("i", { class: "tab-line", "aria-hidden": "true" });
-    tabs.append(this.b.atmo, this.b.equip, this.line);
-    this.show("atmo");
+const Log = {
+  build(root) {
+    this.el = h("div", { class: "log" });
+    root.append(S.data.events.length ? this.el : h("div", { class: "empty" }, "No events in this session."));
   },
-  show(which) {
-    S.intel = which;
-    for (const [k, b] of Object.entries(this.b)) { b.classList.toggle("on", k === which); b.setAttribute("aria-selected", String(k === which)); }
-    $("#tabAtmo").hidden = which !== "atmo";
-    $("#tabEquip").hidden = which !== "equip";
-    if (which === "atmo") Atmo.render(); else Equip.renderScope();
-    requestAnimationFrame(placeAll);
-  },
-  underline() {
-    const on = this.b && this.b[S.intel];
-    if (!on || !this.line) return;
-    this.line.style.width = `${on.offsetWidth * 0.56}px`;
-    this.line.style.transform = `translateX(${on.offsetLeft + on.offsetWidth * 0.22}px)`;
+  update() {
+    if (!S.data.events.length) return;
+    const t = S.t, past = S.data.events.filter((e) => e.t <= t).slice(-12).reverse();
+    const fresh = past.length > 0 && t - past[0].t < 4000;
+    const key = past.map((e) => e.t).join(",") + (fresh ? "+" : "");
+    if (key === this.key) return;
+    this.key = key;
+    this.el.replaceChildren(...past.map((e, i) => h("div", { class: i === 0 && fresh ? "new" : "", title: "Jump here", onclick: () => seek(e.t) },
+      h("span", {}, hms(e.t)), e.text)));
+    if (!past.length) this.el.append(h("div", {}, h("span", {}, "—"), "no events yet at this moment"));
   },
 };
+
+// ---------- instrument rail: one press opens or closes an instrument, any number can be open ----------
+const INSTR = [
+  { k: "over", label: "Overview", icon: '<rect x="3.5" y="3.5" width="7" height="7" rx="1"/><rect x="13.5" y="3.5" width="7" height="7" rx="1"/><rect x="3.5" y="13.5" width="7" height="7" rx="1"/><rect x="13.5" y="13.5" width="7" height="7" rx="1"/>' },
+  { k: "drones", label: "Drones", n: () => S.data.drones.length,
+    icon: '<circle cx="6" cy="6" r="2.6"/><circle cx="18" cy="6" r="2.6"/><circle cx="6" cy="18" r="2.6"/><circle cx="18" cy="18" r="2.6"/><path d="M8 8l8 8M16 8l-8 8"/>' },
+  { k: "radar", label: "Radar", n: () => (S.data.radar ? S.data.radar.tracks : 0),
+    icon: '<path d="M4 18a10 10 0 0 1 15-9"/><path d="M8 18a6 6 0 0 1 8.4-5.5"/><circle cx="12" cy="18" r="1.8"/><path d="M12 18 19 6"/>' },
+  { k: "log", label: "Events", n: () => S.data.events.length,
+    icon: '<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2"/><circle cx="4.5" cy="12" r="1.2"/><circle cx="4.5" cy="18" r="1.2"/>' },
+  { k: "atmo", label: "Weather", icon: '<path d="M3 9h11a3 3 0 1 0-3-3"/><path d="M3 14h15a3 3 0 1 1-3 3"/><path d="M3 19h7"/>' },
+  { k: "equip", label: "Equipment", n: () => S.data.equipment.length,
+    icon: '<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 12l8-4.5M12 12v9M12 12 4 7.5"/>' },
+];
+const X_SVG = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 2.5l7 7M9.5 2.5l-7 7"/></svg>';
+const PREFS = "domeware.hud.view";
+function onPress(el, fn) {  // act on press, not on release: it feels instant (Enter or Space on a focused button still works)
+  el.addEventListener("pointerdown", (e) => { if (e.button === 0) fn(); });
+  el.addEventListener("click", (e) => { if (e.detail === 0) fn(); });
+}
+const Panels = {
+  build() {
+    const stack = $("#stack"), rail = $("#rail");
+    this.cards = {};
+    this.btns = {};
+    INSTR.forEach((it, i) => {
+      const key = String(i + 1);
+      const close = h("button", { class: "x", title: `Close (key ${key})`, "aria-label": `Close ${it.label}`, html: X_SVG });
+      close.addEventListener("click", () => this.set(it.k, false));
+      const meta = h("span", { class: "meta" }), body = h("div", { class: "body", id: `p-${it.k}` });
+      const card = h("section", { class: "card glass inst", id: `card-${it.k}`, hidden: true, "aria-label": it.label },
+        h("div", { class: "card-head" }, h("span", { class: "label" }, h("em", {}, key.padStart(2, "0")), it.label), h("i", { class: "rule" }), meta, close), body);
+      stack.append(card);
+      this.cards[it.k] = { card, body, meta };
+      const n = it.n ? it.n() : 0;
+      const b = h("button", { class: "rb", "aria-pressed": "false", title: `${it.label}: show or hide (key ${key})` },
+        h("kbd", {}, key), n ? h("em", {}, String(n)) : null,
+        h("span", { class: "ico", html: `<svg viewBox="0 0 24 24" aria-hidden="true">${it.icon}</svg>` }), h("span", { class: "t" }, it.label));
+      onPress(b, () => this.toggle(it.k));
+      rail.append(b);
+      this.btns[it.k] = b;
+    });
+    this.hideIco = h("span", { class: "ico" });
+    this.hideTxt = h("span", { class: "t" }, "Hide");
+    this.hideBtn = h("button", { class: "rb hide", title: "Hide or show all panels for more map (key P)" }, h("kbd", {}, "P"), this.hideIco, this.hideTxt);
+    onPress(this.hideBtn, () => this.away(!S.away));
+    rail.append(h("i", { class: "rail-sep" }), this.hideBtn);
+  },
+  meta(k, text) { this.cards[k].meta.textContent = text; },
+  restore() {  // what was open last time, on this computer
+    try {
+      const p = JSON.parse(localStorage.getItem(PREFS) || "null");
+      if (p && Array.isArray(p.open)) S.open = new Set(p.open.filter((k) => INSTR.some((it) => it.k === k)));
+      else if (innerHeight < 880) S.open = new Set(["over"]);  // a smaller screen starts with more map
+      if (p && p.away) S.away = true;
+      if (p && p.glass === false) { S.glass = false; FX.manual = true; }
+    } catch { /* no storage here: the defaults */ }
+    setGlass(S.glass, false);
+    for (const it of INSTR) this.sync(it.k);
+    this.away(S.away, false);
+  },
+  save() { try { localStorage.setItem(PREFS, JSON.stringify({ open: [...S.open], away: S.away, glass: S.glass })); } catch { /* private window */ } },
+  is(k) { return S.open.has(k) && !S.away; },
+  toggle(k) { this.set(k, !S.open.has(k)); },
+  set(k, on) {
+    if (on) S.open.add(k); else S.open.delete(k);
+    this.sync(k);
+    if (on && S.away) this.away(false);
+    this.save();
+  },
+  sync(k) {
+    const on = S.open.has(k), b = this.btns[k];
+    this.cards[k].card.hidden = !on;
+    b.classList.toggle("on", on);
+    b.setAttribute("aria-pressed", String(on));
+    if (on && !S.away) this.show(k);
+  },
+  show(k) {  // fill a card the moment it opens
+    if (k === "atmo") Atmo.render();
+    else if (k === "equip") Equip.renderScope();
+    else ({ over: Over, drones: Drones, radar: Radar, log: Log })[k].update();
+    requestAnimationFrame(placeAll);
+  },
+  away(on, save = true) {
+    S.away = on;
+    $("#side").classList.toggle("away", on);
+    $("#mini").hidden = !on;
+    this.hideBtn.classList.toggle("on", on);
+    this.hideIco.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${on ? "M15 6l-6 6 6 6" : "M9 6l6 6-6 6"}"/></svg>`;
+    this.hideTxt.textContent = on ? "Show" : "Hide";
+    if (Drawer.panelSw) Drawer.panelSw.setAttribute("aria-checked", String(!on));
+    if (on) Clock.update(); else for (const k of S.open) this.show(k);
+    if (save) this.save();
+  },
+};
+function setTz(v) {
+  if (S.tz === v) return;
+  S.tz = v;
+  Clock.tzSeg.set(v);
+  if (Drawer.tzSeg) Drawer.tzSeg.set(v);
+  Log.key = null;
+  TL.render();
+  Atmo.render();
+  Drawer.times();
+  refresh(true);
+}
+function setGlass(on, save = true) {
+  S.glass = on;
+  document.body.classList.toggle("solid", !on);
+  if (Drawer.glassSw) Drawer.glassSw.setAttribute("aria-checked", String(on));
+  if (save) Panels.save();
+}
+function setLoop(on) {
+  S.loop = on;
+  TL.loop.classList.toggle("on", on);
+  if (Drawer.loopSw) Drawer.loopSw.setAttribute("aria-checked", String(on));
+}
 
 // ---------- atmosphere ----------
 const WX = [
@@ -487,7 +684,7 @@ function bandPath(ts, lo, hi, X, Y) {  // the area between two series, only wher
 }
 const Atmo = {
   build() {
-    const root = $("#tabAtmo");
+    const root = $("#p-atmo");
     const wx = S.data.weather;
     if (!wx) { root.append(h("div", { class: "empty" }, "No weather data in this session.")); return; }
     // compass
@@ -530,8 +727,9 @@ const Atmo = {
     }
     this.svg = sv("svg", {});
     const chart = h("div", { class: "chart", title: "Left axis m/s. Temperature, humidity and pressure each on their own scale (values in the tooltip). Arrows: where the wind blows. Click to jump there." },
-      this.svg, h("div", { class: "src" }, `${wx.source.toUpperCase()} · 1-MIN`));
+      this.svg);
     root.append(h("div", { class: "atmo-top" }, cmp, now), chips, chart);
+    new ResizeObserver(() => { if (Panels.is("atmo")) this.render(); }).observe(chart);
     this.svg.addEventListener("pointermove", (e) => this.hover(e));
     this.svg.addEventListener("pointerleave", () => { Tip.hide(); if (this.hov) this.hov.setAttribute("visibility", "hidden"); });
     this.svg.addEventListener("click", (e) => { const t = this.timeAt(e); if (t !== null) seek(t); });
@@ -544,7 +742,7 @@ const Atmo = {
   },
   render() {
     const wx = S.data.weather;
-    if (!wx || !this.svg || $("#tabAtmo").hidden) return;
+    if (!wx || !this.svg || !Panels.is("atmo")) return;
     const svg = this.svg, W = svg.clientWidth || 380, Hh = svg.clientHeight || 160;
     svg.setAttribute("viewBox", `0 0 ${W} ${Hh}`);
     svg.replaceChildren();
@@ -640,7 +838,7 @@ const Atmo = {
     this.kv.temp.textContent = `${fx(v("temp"))} °C`;
     this.kv.rh.textContent = `${fx(v("rh"), 0)} %`;
     this.kv.pressure.textContent = `${fx(v("pressure"))} hPa`;
-    if (!this.geo || !this.cur || $("#tabAtmo").hidden) return;
+    if (!this.geo || !this.cur || !Panels.is("atmo")) return;
     const { X, Y } = this.geo, x = X(t);
     this.cur.setAttribute("transform", `translate(${x.toFixed(1)},0)`);
     this.cur.querySelector("line").setAttribute("x1", 0);
@@ -691,7 +889,7 @@ const GROUPS = [
 ];
 const Equip = {
   build() {
-    const root = $("#tabEquip");
+    const root = $("#p-equip");
     const items = S.data.equipment;
     if (!items.length) { root.append(h("div", { class: "empty" }, "No equipment known yet: add rows to equipment.csv.")); return; }
     // the choice list
@@ -712,12 +910,10 @@ const Equip = {
     this.svg = sv("svg", { class: "scope" });
     this.live = sv("g", {});
     this.note = h("div", { class: "scope-note" });
-    root.append(
-      h("div", { class: "eq-head" }, dd, h("span", { class: "label" }, "Scope")),
-      h("div", { class: "scope-wrap" }, this.svg, h("div", { class: "sweep" }, h("i")), h("div", { class: "scope-ctl" }, this.scopeSeg), this.note),
-      (this.list = h("div", { class: "eq-list" })),
-    );
+    const wrap = h("div", { class: "scope-wrap" }, this.svg, h("div", { class: "sweep" }, h("i")), h("div", { class: "scope-ctl" }, this.scopeSeg), this.note);
+    root.append(h("div", { class: "eq-head" }, dd, h("span", { class: "note" }, "RADAR AT THE CENTRE")), wrap, (this.list = h("div", { class: "eq-list" })));
     this.renderList();
+    new ResizeObserver(() => { if (Panels.is("equip")) this.renderScope(); }).observe(wrap);
   },
   visible() { const g = GROUPS.find(([k]) => k === S.filter) || GROUPS[0]; return S.data.equipment.filter((i) => g[2](i.kind)); },
   select(id, fromViewer = false) {
@@ -772,7 +968,7 @@ const Equip = {
     }));
   },
   renderScope() {
-    if (!this.svg || $("#tabEquip").hidden) return;
+    if (!this.svg || !Panels.is("equip")) return;
     const svg = this.svg, W = svg.clientWidth || 380, Hh = svg.clientHeight || 236;
     svg.setAttribute("viewBox", `0 0 ${W} ${Hh}`);
     svg.replaceChildren();
@@ -795,6 +991,7 @@ const Equip = {
     }
     svg.append(sv("text", { class: "north", x: cx, y: cy - R - 6 }, "N"));
     const vis = new Set(this.visible().map((i) => i.id));
+    this.labels = [];  // [x, y, width] of each name drawn: names that would overlap are left to the tooltip
     for (const it of items) {
       const [x, y] = it.id === "radar" ? [cx, cy] : P(it.e, it.n);
       const sel = S.sel === it.id;
@@ -802,7 +999,10 @@ const Equip = {
       if (sel) g.append(sv("circle", { class: "halo", cx: x, cy: y, r: 9 }));
       if (it.kind === "radar") g.append(sv("path", { d: `M${x},${y - 8} L${x + 7},${y + 5} L${x - 7},${y + 5} Z`, fill: KIND_COLOR.radar, stroke: "#fff", "stroke-width": 1.5 }));
       else g.append(sv("circle", { class: "dot", cx: x, cy: y, r: sel ? 6.5 : 5, fill: KIND_COLOR[it.kind] || KIND_COLOR.other }));
-      if (sel || items.length <= 3) g.append(sv("text", { x: x + 9, y: y - 8 }, it.name));
+      if (sel || (items.length <= 3 && this.free(x + 9, y - 8, it.name, this.labels))) {
+        g.append(sv("text", { x: x + 9, y: y - 8 }, it.name));
+        this.labels.push([x + 9, y - 8, it.name.length * 6]);
+      }
       g.addEventListener("click", () => this.select(it.id));
       g.addEventListener("pointermove", (e) => Tip.show(`<b>${esc(it.name)}</b><br><span style="color:var(--muted)">${esc(it.type)} · ${it.id === "radar" ? "origin" : `${dist(it.range_m)} @ ${fx(it.bearing_deg, 0)}°`}</span>`, e.clientX, e.clientY));
       g.addEventListener("pointerleave", () => Tip.hide());
@@ -814,12 +1014,17 @@ const Equip = {
     this.liveKey = null;
     this.updateLive();
   },
+  free(x, y, name, taken) {  // room for a name here?
+    const w = name.length * 6;
+    return !taken.some(([tx, ty, tw]) => x < tx + tw + 6 && tx < x + w + 6 && Math.abs(y - ty) < 12);
+  },
   updateLive() {
-    if (!this.live || !this.P || $("#tabEquip").hidden || !S.data.drones.length) return;
+    if (!this.live || !this.P || !Panels.is("equip") || !S.data.drones.length) return;
     const t = S.t, key = `${Math.round(t / 250)}|${S.drone}|${S.scope}`;
     if (key === this.liveKey) return;  // nothing moved since the last drawing
     this.liveKey = key;
     this.live.replaceChildren();
+    const taken = (this.labels || []).slice();
     for (const d of S.data.drones) {
       const e = droneAt(d, "e", t), n = droneAt(d, "n", t);
       if (e === null || n === null) continue;
@@ -837,22 +1042,26 @@ const Equip = {
       if (tail) g.append(sv("path", { d: tail, fill: "none", stroke: d.ui, "stroke-width": 1.6, opacity: 0.55 }));
       g.append(sv("circle", { cx: x, cy: y, r: big ? 6 : 4.5, fill: d.ui, opacity: out ? 0.55 : 1 }));
       if (S.data.radar) g.append(sv("circle", { cx: x, cy: y, r: big ? 9 : 7, fill: "none", stroke: tracked ? "#138a52" : "#cf3a57", "stroke-width": 1.2, opacity: 0.85 }));
-      if (big || S.data.drones.length <= 4) g.append(sv("text", { x: x + 8, y: y + 3, fill: d.ui }, d.name));
+      if (big || (S.data.drones.length <= 4 && this.free(x + 8, y + 3, d.name, taken))) {
+        g.append(sv("text", { x: x + 8, y: y + 3, fill: d.ui }, d.name));
+        taken.push([x + 8, y + 3, d.name.length * 6]);
+      }
       this.live.append(g);
     }
   },
 };
 
 // ---------- timeline ----------
-const LANES = [
-  { key: "ruler", label: "TIME", h: 26 },
-  { key: "activity", label: "ACTIVITY", h: 34 },
-  { key: "drones", label: "DRONES", h: 0 },
-  { key: "radar", label: "RADAR", h: 22 },
-  { key: "events", label: "EVENTS", h: 20 },
-  { key: "screens", label: "SCREENS", h: 42 },
-  { key: "wind", label: "WIND", h: 34 },
+const LANES = [  // h: lane height; hs: on a smaller screen
+  { key: "ruler", label: "TIME", h: 26, hs: 22 },
+  { key: "activity", label: "ACTIVITY", h: 34, hs: 30 },
+  { key: "drones", label: "DRONES", h: 0, hs: 0 },
+  { key: "radar", label: "RADAR", h: 22, hs: 18 },
+  { key: "events", label: "EVENTS", h: 20, hs: 18 },
+  { key: "screens", label: "SCREENS", h: 42, hs: 38 },
+  { key: "wind", label: "WIND", h: 34, hs: 26 },
 ];
+const laneH = (key) => LANES.find((l) => l.key === key).h;
 function evKind(text) {
   const t = text.toLowerCase();
   if (t.startsWith("note")) return "note";
@@ -872,12 +1081,13 @@ const TL = {
     const tr = (label, title, fn) => h("button", { title, onclick: fn }, label);
     this.speed = seg([["0.5", "½×"], ["1", "1×"], ["2", "2×"], ["5", "5×"], ["10", "10×"], ["30", "30×"]], "1", (v) => { S.speed = +v; });
     this.loop = h("button", { class: "chip loopchip on", title: "Loop the activity" }, h("i"), "LOOP");
-    this.loop.addEventListener("click", () => { S.loop = !S.loop; this.loop.classList.toggle("on", S.loop); });
+    this.loop.addEventListener("click", () => setLoop(!S.loop));
     root.append(h("div", { class: "tl-ctrl" },
       h("div", { class: "tl-top" }, this.playBtn, h("div", { class: "tl-now" }, this.nowB, this.nowS)),
       h("div", { class: "transport" }, tr("|◀", "Start of the activity (Home)", () => seek(S.act[0])), tr("−10 s", "Back 10 s (← 5 s)", () => seek(S.t - 10000)),
         tr("+10 s", "Forward 10 s (→ 5 s)", () => seek(S.t + 10000)), tr("▶|", "End of the activity (End)", () => seek(S.act[1]))),
       h("div", { class: "speed-row" }, this.speed, this.loop)));
+    if (innerHeight < 880) for (const L of LANES) L.h = L.hs;
     const n = S.data.drones.length;
     LANES.find((l) => l.key === "drones").h = n ? clamp(n * (n <= 8 ? 14 : 9) + 10, 28, 72) : 24;  // room for height profiles
     this.labels = h("div", { class: "tl-labels" });
@@ -1013,7 +1223,7 @@ const TL = {
     } else L.drones.append(h("div", { class: "lane-note" }, "no drone logs"));
     // radar density
     if (d.radar) {
-      const r = d.radar, max = Math.max(1, ...r.alive), lh = 22, bins = Math.max(1, Math.floor(this.W / 2));
+      const r = d.radar, max = Math.max(1, ...r.alive), lh = laneH("radar"), bins = Math.max(1, Math.floor(this.W / 2));
       let path = "";
       for (let k = 0; k < bins; k++) {
         const ta = v0 + ((v1 - v0) * k) / bins, tb = v0 + ((v1 - v0) * (k + 1)) / bins;
@@ -1052,7 +1262,7 @@ const TL = {
     // wind sparkline
     const wx = d.weather;
     if (wx && wx.wind) {
-      const lh = 34, top = Math.max(1, ...[...wx.wind, ...(wx.gust || [])].filter((v) => v !== null));
+      const lh = laneH("wind"), top = Math.max(1, ...[...wx.wind, ...(wx.gust || [])].filter((v) => v !== null));
       const Y = (v) => lh - 3 - (v / top) * (lh - 7);
       const svg = sv("svg", { viewBox: `0 0 ${this.W} ${lh}`, preserveAspectRatio: "none" },
         sv("defs", {}, sv("linearGradient", { id: "gw2", x1: 0, y1: 0, x2: 0, y2: 1 }, sv("stop", { offset: "0%", "stop-color": "#0a8db6", "stop-opacity": 0.3 }), sv("stop", { offset: "100%", "stop-color": "#0a8db6", "stop-opacity": 0 }))),
@@ -1088,12 +1298,111 @@ const Lightbox = {
   close() { $("#lightbox").hidden = true; },
 };
 
+// ---------- menu page (top left) ----------
+const MARK = '<svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 18a9 9 0 0 1 18 0"/><path d="M7 18a5 5 0 0 1 10 0"/><circle cx="12" cy="18" r="1.4"/><path d="M12 18 18.5 7.5"/></svg>';
+const Drawer = {
+  isOpen: false,
+  build() {
+    const d = S.data, st = d.status;
+    const sec = (n, title, ...kids) => h("section", { class: "dr-sec" }, h("h4", {}, h("em", {}, n), title, h("i")), ...kids);
+    const row = (k, ...v) => h("div", { class: "dr-row" }, h("span", {}, k), h("b", {}, ...v));
+    const led = (state) => h("i", { class: `led ${state}` });
+    const ctl = (title, sub, control, key) => h("div", { class: "dr-ctl" },
+      h("div", {}, h("b", {}, title, key ? " " : null, key ? h("kbd", {}, key) : null), h("small", {}, sub)), control);
+    const sw = (on, fn) => { const s = h("button", { class: "switch", role: "switch", "aria-checked": String(on) }); s.addEventListener("click", fn); return s; };
+    const link = (file, title, icon) => h("a", { class: "dr-act off", href: `/data/${file}`, "data-file": file, "aria-disabled": "true",
+      target: file.endsWith(".html") ? "_blank" : null, rel: "noopener", download: file.endsWith(".kml") ? file : null },
+    h("span", { html: `<svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg>` }), h("div", {}, h("b", {}, title), h("small", {}, "checking …")));
+    this.closeBtn = h("button", { class: "x", "aria-label": "Close the menu", title: "Close (Esc)", html: X_SVG });
+    this.closeBtn.addEventListener("click", () => this.close());
+    this.actT = h("span", {});
+    this.panelSw = sw(!S.away, () => Panels.away(!S.away));
+    this.loopSw = sw(S.loop, () => setLoop(!S.loop));
+    this.glassSw = sw(S.glass, () => { FX.manual = true; setGlass(!S.glass); });
+    this.tzSeg = seg([["UTC", "UTC"], ["LOCAL", "Local"]], S.tz, setTz);
+    this.links = [
+      link("report.html", "Session report", '<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h7"/>'),
+      link("session.kml", "Google Earth file", '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>'),
+    ];
+    const keys = [["Space", "play / pause"], ["← →", "5 s back / forward (Shift: 60 s)"], ["Home End", "start / end of the activity"],
+      ["1 – 6", "open or close an instrument"], ["P", "hide or show the panels"], ["M", "this menu"], ["Esc", "close"],
+      ["Wheel", "zoom the timeline"], ["Dbl-click", "fit the timeline to the activity"]];
+    $("#drawer").append(
+      h("div", { class: "dr-head" }, h("span", { html: MARK }), h("b", {}, "DOMEWARE"), h("span", {}, "MENU"), this.closeBtn),
+      h("div", { class: "dr-body" },
+        sec("01", "Session",
+          row("Session", d.session),
+          row("Site", d.site.name, Number.isFinite(d.site.lat) ? h("small", {}, `${d.site.lat.toFixed(5)}, ${d.site.lon.toFixed(5)}`) : null),
+          row("Activity", this.actT),
+          row("Data", st.simulated ? "SIMULATED" : "recorded in the field")),
+        sec("02", "Data in this replay",
+          row("Radar", led(st.radar_tracks ? "ok" : "wait"), st.radar_tracks ? `${st.radar_tracks} tracks` : "pending (third party)"),
+          row("Drones", led(st.drones ? "ok" : st.drone_logs_encrypted ? "warn" : ""),
+            st.drones ? `${st.drones} flight path${st.drones > 1 ? "s" : ""}` : st.drone_logs_encrypted ? "log encrypted: header only" : "none"),
+          row("Weather", led(st.weather ? "ok" : ""), st.weather || "none"),
+          row("Screens", led(st.screens ? "ok" : ""), `${st.screens} photos`),
+          row("Equipment", led(d.equipment.length ? "ok" : ""), `${d.equipment.length} items`)),
+        sec("03", "View",
+          ctl("Panels", "the instruments over the map", this.panelSw, "P"),
+          ctl("Time", "UTC for evidence, local for the field team", this.tzSeg),
+          ctl("Loop", "start again at the end of the activity", this.loopSw),
+          ctl("Glass panels", "the map shows through; turns off by itself if playback is slow", this.glassSw)),
+        sec("04", "Open", ...this.links),
+        sec("05", "Keys", h("div", { class: "dr-keys" }, ...keys.flatMap(([k, v]) => [h("kbd", {}, k), h("span", {}, v)])))),
+      h("div", { class: "dr-foot" }, `Replay built ${String(d.generated_utc).slice(0, 16).replace("T", " ")} UTC · id ${String(d.recording_id).slice(0, 8)}`,
+        h("br"), "Served from this computer only (127.0.0.1)"));
+    $("#menuBtn").addEventListener("click", () => this.toggle());
+    $("#scrim").addEventListener("click", () => this.close());
+    this.times();
+  },
+  times() {
+    const a = S.data.activity;
+    if (this.actT) this.actT.textContent = a ? `${hm(a[0])} → ${hm(a[1])} ${S.tz === "UTC" ? "UTC" : "local"}` : "—";
+  },
+  async check() {  // offer only the files this session has
+    for (const a of this.links) {
+      let ok = false;
+      try { ok = (await fetch(a.getAttribute("href"), { method: "HEAD", cache: "no-store" })).ok; } catch { /* server gone */ }
+      const report = a.dataset.file.endsWith(".html");
+      a.classList.toggle("off", !ok);
+      a.setAttribute("aria-disabled", String(!ok));
+      a.querySelector("small").textContent = ok ? (report ? "opens in a new window" : "download it, then open it in Google Earth")
+        : `not made yet: run  dw ${report ? "report" : "kml"}`;
+    }
+  },
+  open() {
+    this.isOpen = true;
+    const el = $("#drawer");
+    el.classList.add("open");
+    el.removeAttribute("inert");
+    el.setAttribute("aria-hidden", "false");
+    $("#scrim").classList.add("on");
+    $("#menuBtn").setAttribute("aria-expanded", "true");
+    this.times();
+    this.check();
+    requestAnimationFrame(() => { placeAll(); this.closeBtn.focus({ preventScroll: true }); });
+  },
+  close() {
+    if (!this.isOpen) return;
+    this.isOpen = false;
+    const el = $("#drawer");
+    el.classList.remove("open");
+    el.setAttribute("inert", "");
+    el.setAttribute("aria-hidden", "true");
+    $("#scrim").classList.remove("on");
+    $("#menuBtn").setAttribute("aria-expanded", "false");
+    $("#menuBtn").focus({ preventScroll: true });
+  },
+  toggle() { if (this.isOpen) this.close(); else this.open(); },
+};
+
 // ---------- keys, resize, start ----------
 function bindHelp() {
   const b = $("#helpBtn");
   if (!b) return;
   const html = '<b>Keys</b><div class="keys2"><kbd>Space</kbd><span>play / pause</span><kbd>← →</kbd><span>5 s back / forward</span>'
     + '<kbd>Shift</kbd><span>with ← → : 60 s</span><kbd>Home End</kbd><span>start / end of the activity</span>'
+    + '<kbd>1 – 6</kbd><span>open or close an instrument</span><kbd>P</kbd><span>hide or show the panels</span><kbd>M</kbd><span>menu</span>'
     + '<kbd>Wheel</kbd><span>zoom the timeline</span><kbd>Dbl-click</kbd><span>fit the activity</span></div>'
     + `<div class="prov">Data built ${esc(String(S.data.generated_utc).slice(0, 16).replace("T", " "))} UTC<br>Session ${esc(S.data.session)}`
     + ` · replay ${esc(String(S.data.recording_id).slice(0, 8))}</div>`;
@@ -1103,14 +1412,18 @@ function bindHelp() {
 function bindKeys() {
   window.addEventListener("keydown", (e) => {
     if (e.target.closest && e.target.closest("input, select, textarea")) return;
-    const box = !$("#lightbox").hidden;
+    const box = !$("#lightbox").hidden, plain = !e.ctrlKey && !e.altKey && !e.metaKey;
+    const digit = /^(?:Digit|Numpad)([1-6])$/.exec(e.code);
     let used = true;
     if (e.code === "Space" && !box) setPlaying(!S.playing);
     else if (e.code === "ArrowLeft") box ? Lightbox.open(Lightbox.i - 1) : seek(S.t - (e.shiftKey ? 60000 : 5000));
     else if (e.code === "ArrowRight") box ? Lightbox.open(Lightbox.i + 1) : seek(S.t + (e.shiftKey ? 60000 : 5000));
     else if (e.code === "Home") seek(S.act[0]);
     else if (e.code === "End") seek(S.act[1]);
-    else if (e.code === "Escape") Lightbox.close();
+    else if (digit && plain && !box) Panels.toggle(INSTR[+digit[1] - 1].k);
+    else if (e.code === "KeyP" && plain && !box) Panels.away(!S.away);
+    else if (e.code === "KeyM" && plain && !box) Drawer.toggle();
+    else if (e.code === "Escape") { if (!box && Drawer.isOpen) Drawer.close(); else Lightbox.close(); }
     else used = false;
     if (used) { e.preventDefault(); e.stopPropagation(); }
   }, true);
@@ -1118,7 +1431,7 @@ function bindKeys() {
 let resizeTimer = null;
 function onResize() {
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => { TL.render(); Atmo.render(); Equip.renderScope(); }, 120);
+  resizeTimer = setTimeout(() => { TL.render(); placeAll(); }, 120);  // the weather chart and the scope follow their own size
 }
 async function init() {
   const res = await fetch("/data/hud/data.json", { cache: "no-store" });
@@ -1135,22 +1448,33 @@ async function init() {
   $("#sessionName").textContent = d.session;
   $("#siteName").textContent = d.site.name;
   $("#stageSite").textContent = d.site.name.toUpperCase();
+  const deg = (v, pos, neg) => `${Math.abs(v).toFixed(4)}°${v >= 0 ? pos : neg}`;
+  if (Number.isFinite(d.site.lat) && Number.isFinite(d.site.lon)) $("#stageGeo").textContent = `${deg(d.site.lat, "N", "S")}  ${deg(d.site.lon, "E", "W")}`;
   $("#simTag").hidden = !d.status.simulated;
   document.title = `${d.session} · domeware HUD`;
   buildStatus();
   Clock.build();
-  Intel.build();
+  Panels.build();
+  Over.build($("#p-over"));
+  Drones.build($("#p-drones"));
+  Radar.build($("#p-radar"));
+  Log.build($("#p-log"));
   Atmo.build();
   Equip.build();
+  Panels.meta("drones", d.drones.length ? `${d.drones.length} logged` : d.flights_header.length ? "path pending" : "none");
+  Panels.meta("radar", d.radar ? `${d.radar.tracks} tracks` : "pending");
+  Panels.meta("log", `${d.events.length} in all`);
+  Panels.meta("atmo", d.weather ? `${d.weather.source} · 1 min` : "none");
+  Panels.meta("equip", `${d.equipment.length} items`);
   TL.build();
   Lightbox.build();
+  Drawer.build();
+  Panels.restore();
   bindKeys();
   bindHelp();
   window.addEventListener("resize", onResize);
-  window.addEventListener("resize", () => requestAnimationFrame(placeAll));
-  new ResizeObserver(onResize).observe($("#side"));
   refresh(true);
-  window.__hud.R = { refresh, TL, Clock, Atmo, Equip, Intel };  // for timing checks from the console
+  window.__hud.R = { refresh, TL, Clock, Panels, Over, Drones, Radar, Log, Atmo, Equip, Drawer };  // for timing checks from the console
   requestAnimationFrame(frame);
   setTimeout(placeAll, 300);  // fonts settle, then the sliding pills find their places
   const ping = () => fetch("/api/ping", { cache: "no-store" }).catch(() => {});

@@ -11,6 +11,9 @@
 <body>
 <div id="app">
   <header id="top">
+    <button class="menu-btn" id="menuBtn" aria-label="Menu (M)" title="Menu (M)" aria-expanded="false" aria-controls="drawer">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5h16M4 12h16M4 17.5h16"/></svg>
+    </button>
     <div class="brand">
       <svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 18a9 9 0 0 1 18 0"/><path d="M7 18a5 5 0 0 1 10 0"/><circle cx="12" cy="18" r="1.4"/><path d="M12 18 18.5 7.5"/></svg>
       <b>DOMEWARE</b><span>REPLAY HUD</span>
@@ -22,28 +25,26 @@
 
   <main id="stage">
     <div id="viewer"></div>
-    <div class="frame" aria-hidden="true"><i class="c tl"></i><i class="c tr"></i><i class="c bl"></i><i class="c br"></i></div>
-    <div class="stage-label"><i></i>3D · <span id="stageSite">—</span></div>
     <div id="loading">
       <div class="ring"><i></i></div>
       <div class="msg">INITIALISING 3D ENGINE</div>
       <div class="bar"><i></i></div>
       <div class="sub" id="loadSub">loading the viewer</div>
     </div>
+    <div class="stage-label"><i></i>3D<b id="stageSite">—</b><em id="stageGeo"></em></div>
+    <div id="mini" class="mini glass" hidden></div>
+    <aside id="side">
+      <section class="card glass" id="clock"></section>
+      <div id="stack"></div>
+    </aside>
+    <nav id="rail" class="glass" aria-label="Instruments"></nav>
   </main>
 
-  <aside id="side">
-    <section class="card" id="clock"></section>
-    <section class="card" id="intel">
-      <div class="tabs" id="intelTabs"></div>
-      <div class="tab-body" id="tabAtmo"></div>
-      <div class="tab-body" id="tabEquip" hidden></div>
-    </section>
-  </aside>
-
-  <footer id="timeline" class="card"></footer>
+  <footer id="timeline"></footer>
 </div>
 
+<div id="scrim"></div>
+<nav id="drawer" aria-label="Menu" aria-hidden="true" inert></nav>
 <div id="tip" class="tip" hidden></div>
 <div id="lightbox" hidden>
   <div class="lb-frame">

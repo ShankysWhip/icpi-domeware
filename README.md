@@ -36,12 +36,16 @@ Every button runs the same `dw` command as the command line: `uv run dw hud <ses
 
 ### The replay HUD (`dw hud`)
 
-The 3D scene (the Rerun web viewer) with domeware's own panels around it, all on one clock, on a clean white
-screen (numbers in monospace, small spaced labels, status lights):
+The 3D scene (the Rerun web viewer) fills the window; domeware's instruments float over it as glass cards, all on
+one clock (numbers in monospace, small spaced labels, status lights):
 
-- **Mission clock:** the time (UTC or local), T+ from the start of the activity, the phase, and a readout to choose:
-  *Overview* (wind, gust, temperature, drones airborne, radar hold, events), *Drones* (range, height, speed, radar
-  tracked or lost for each), *Radar* (tracks alive, share of airborne time tracked per drone), *Events* (latest events, click one to jump there).
+- **Instruments** (the rail on the right, keys 1–6): *Overview* (wind, gust and temperature with their last 15
+  minutes, drones airborne, radar hold, events), *Drones* (range, height, speed, radar tracked or lost for each),
+  *Radar* (tracks alive, share of airborne time tracked per drone), *Events* (latest events, click one to jump
+  there), *Weather* and *Equipment*. One press opens or closes one, any number can be open, and the choice is kept
+  for next time. **P** hides them all for the whole map; a small clock stays on it.
+- **Mission clock:** the time (UTC or local), T+ from the start of the activity, the phase, and the activity bar
+  (click to jump).
 - **Weather:** wind dial and numbers; wind, gust, direction, temperature, humidity and pressure in one chart,
   each series switched on or off; click the chart to jump there.
 - **Equipment:** a choice list (all, sensors, weather, take-offs, crew), a radar-centred scope (site or whole area,
@@ -50,7 +54,10 @@ screen (numbers in monospace, small spaced labels, status lights):
 - **Timeline:** play, ±10 s, start/end, speed ½× to 30×, loop; lanes for the activity and its phases, each drone
   (bright where the radar tracked it, hatched red where it did not), radar tracks alive, events, screenshots as
   thumbnails (hover for a preview, click for full size) and wind. Wheel zooms, double-click fits the activity.
-- Keys (the **?** button lists them): Space play/pause, ←/→ 5 s, Shift ←/→ 60 s, Home/End.
+- **Menu** (☰ top left, or M): the session, what data the replay has, view switches (panels, UTC/local, loop,
+  glass panels: they turn solid by themselves if playback runs slowly), the report and the Google Earth file, and the keys.
+- Keys (the **?** button lists them too): Space play/pause, ←/→ 5 s, Shift ←/→ 60 s, Home/End, 1–6 instruments,
+  P panels, M menu, Esc close.
 
 It is served from this computer only (127.0.0.1) and stops by itself about 45 s after its window is closed. The data
 is written by `dw replay` (`views/hud/`); the web viewer comes from `dw setup` (hash-pinned in `domeware-vendor`,
