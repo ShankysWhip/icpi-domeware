@@ -250,7 +250,7 @@ def _web_viewer() -> Path:
 def _code_stamp() -> tuple[int, int]:
     """Newest change (ms) of the page files and of domeware's Python code: an open window offers a reload when the
     page changed, and asks for a restart when the server's own code did."""
-    web = max((f.stat().st_mtime_ns for f in WEB.iterdir() if f.is_file()), default=0)
+    web = max((f.stat().st_mtime_ns for f in WEB.rglob("*") if f.is_file()), default=0)
     py = max((f.stat().st_mtime_ns for f in Path(__file__).parent.rglob("*.py")), default=0)
     return web // 1_000_000, py // 1_000_000
 

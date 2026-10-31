@@ -41,6 +41,26 @@ def test_window_builds_and_side_panel_toggles(tmp_path):
         root.destroy()
 
 
+def test_icpi_logo_draws_the_same_strokes_as_its_svg(tmp_path):
+    from domeware import brand, report
+
+    svg = brand.svg()
+    assert svg.startswith("<svg") and 'viewBox="0 0 80 38"' in svg and "#000" not in svg  # no black background
+    html = report.to_html("# Run report\n\nAll fine.", tmp_path)
+    assert "<header><svg" in html and "domeware · test report" in html
+    tk = pytest.importorskip("tkinter")
+    try:
+        root = tk.Tk()
+    except tk.TclError:
+        pytest.skip("no display")
+    try:
+        c = tk.Canvas(root)
+        assert round(brand.draw_tk(c, 38)) == 80
+        assert len(c.find_all()) == 12  # four letters and eight spark strokes
+    finally:
+        root.destroy()
+
+
 def test_new_sessions_show_up_with_f5(tmp_path):
     tk = pytest.importorskip("tkinter")
     try:
@@ -59,7 +79,9 @@ def test_new_sessions_show_up_with_f5(tmp_path):
 
 
 def test_hud_script_parses():
-    """The HUD script has no syntax error (node --check), when node is on this laptop."""
+    """The HUD's modules have no syntax error (node --check), and every name a module imports is exported by the
+    module it names, when node is on this laptop."""
+    import re
     import shutil
     import subprocess
     from pathlib import Path
@@ -67,6 +89,12 @@ def test_hud_script_parses():
     node = shutil.which("node") or r"C:\Program Files\nodejs\node.exe"
     if not Path(node).exists():
         pytest.skip("node not installed")
-    js = Path(app.__file__).with_name("web") / "hud.js"
-    r = subprocess.run([node, "--check", str(js)], capture_output=True, text=True)
-    assert r.returncode == 0, r.stderr
+    web = Path(app.__file__).with_name("web")
+    mods = [web / "hud.mjs", *sorted((web / "js").glob("*.mjs"))]
+    assert len(mods) > 5
+    for js in mods:
+        r = subprocess.run([node, "--check", str(js)], capture_output=True, text=True)
+        assert r.returncode == 0, (js.name, r.stderr)
+        for names, src in re.findall(r'^import \{ (.+?) \} from "\./(.+?)";', js.read_text(encoding="utf-8"), re.M):
+            exported = set(re.findall(r"^export (?:async )?(?:function|const|let) ([\w$]+)", (js.parent / src).read_text(encoding="utf-8"), re.M))
+            assert set(names.split(", ")) <= exported, (js.name, src)

@@ -14,6 +14,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import ttk
 
+from domeware import brand
 from domeware.overview import DEFAULT_ROOT
 
 # the four everyday jobs: (title, dw job, what it does, symbol)
@@ -141,6 +142,9 @@ class App:
         # header
         head = tk.Frame(main, bg=BG)
         head.grid(row=0, column=0, sticky="ew")
+        logo = tk.Canvas(head, height=28, width=62, bg=BG, highlightthickness=0)
+        logo.configure(width=round(brand.draw_tk(logo, 26, 1, 1)) + 2)
+        logo.pack(side="left", padx=(0, 12))
         tk.Label(head, text="domeware", bg=BG, fg=TEXT, font=("Segoe UI Semibold", 18)).pack(side="left")
         tk.Label(head, text="  C-UAS test replay", bg=BG, fg=MUTED, font=FONT).pack(side="left", pady=(7, 0))
         self.more_btn = tk.Label(head, text="All commands  ›", bg=CARD, fg=ACCENT_DARK, font=BOLD, padx=12, pady=6,

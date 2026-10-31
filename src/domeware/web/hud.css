@@ -42,8 +42,8 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .menu-btn:hover { background: var(--panel-2); color: var(--accent-2); }
 .menu-btn[aria-expanded="true"] { background: var(--accent-soft); color: var(--accent-2); }
 .brand { display: flex; align-items: center; gap: 10px; }
-.brand .mark { width: 26px; height: 26px; padding: 4px; border-radius: var(--r); background: var(--text); fill: none; stroke: #fff;
-  stroke-width: 1.8; stroke-linecap: round; }
+.brand .logo { display: block; height: 28px; width: auto; }
+.brand .sep { width: 1px; height: 20px; background: var(--line-2); margin: 0 3px; }
 .brand b { font-weight: 700; letter-spacing: .22em; font-size: 12.5px; }
 .brand span { color: var(--accent); font-size: 10px; letter-spacing: .26em; font-weight: 600; }
 .crumbs { font-family: var(--mono); color: var(--muted); font-size: 12px; display: flex; gap: 8px; align-items: center;
@@ -122,6 +122,7 @@ body.solid .glass { background: rgba(255, 255, 255, .97); -webkit-backdrop-filte
 #loading { position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 14px; padding-right: calc(var(--side) + var(--rail) + 20px); background: #f2f5f8; transition: opacity .4s; }
 #loading.gone { opacity: 0; pointer-events: none; }
+#loading .load-logo { height: 34px; width: auto; margin-bottom: 10px; }
 #loading .ring { width: 54px; height: 54px; border-radius: 50%; border: 2px solid var(--line); position: relative; }
 #loading .ring i { position: absolute; inset: -2px; border-radius: 50%; border: 2px solid transparent; border-top-color: var(--accent);
   animation: spin 1s linear infinite; }
@@ -452,7 +453,8 @@ body.solid .glass { background: rgba(255, 255, 255, .97); -webkit-backdrop-filte
   transform: translateX(-104%); transition: transform .24s cubic-bezier(.2, .8, .2, 1); }
 #drawer.open { transform: none; }
 .dr-head { height: var(--top); flex: none; display: flex; align-items: center; gap: 10px; padding: 0 8px 0 14px; border-bottom: 1px solid var(--line); }
-.dr-head .mark { width: 24px; height: 24px; padding: 4px; border-radius: var(--r); background: var(--text); fill: none; stroke: #fff; stroke-width: 1.8; stroke-linecap: round; }
+.dr-head .logo { display: block; height: 24px; width: auto; }
+.dr-head span:first-child { margin-right: 6px; }
 .dr-head b { font-weight: 700; letter-spacing: .22em; font-size: 12px; }
 .dr-head span { color: var(--accent); font-size: 9.5px; letter-spacing: .26em; font-weight: 600; margin-right: auto; }
 .dr-body { flex: 1; overflow: auto; padding: 4px 0 18px; }

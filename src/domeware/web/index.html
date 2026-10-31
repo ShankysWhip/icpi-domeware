@@ -15,7 +15,8 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5h16M4 12h16M4 17.5h16"/></svg>
     </button>
     <div class="brand">
-      <svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 18a9 9 0 0 1 18 0"/><path d="M7 18a5 5 0 0 1 10 0"/><circle cx="12" cy="18" r="1.4"/><path d="M12 18 18.5 7.5"/></svg>
+      <img class="logo" src="/app/icpi.svg" alt="ICPI">
+      <i class="sep" aria-hidden="true"></i>
       <b>DOMEWARE</b><span>REPLAY HUD</span>
     </div>
     <div class="crumbs"><span id="sessionName">—</span><i>/</i><span id="siteName">—</span><em id="simTag" hidden>SIMULATED</em></div>
@@ -27,6 +28,7 @@
   <main id="stage">
     <div id="viewer"></div>
     <div id="loading">
+      <img class="load-logo" src="/app/icpi.svg" alt="ICPI">
       <div class="ring"><i></i></div>
       <div class="msg">INITIALISING 3D ENGINE</div>
       <div class="bar"><i></i></div>
@@ -61,6 +63,6 @@
   </div>
 </div>
 
-<script type="module" src="/app/hud.js"></script>
+<script type="module" src="/app/hud.mjs"></script>
 </body>
 </html>

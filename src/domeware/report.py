@@ -248,8 +248,13 @@ def to_html(md: str, views) -> str:
            "h1{font-size:22px}h2{font-size:18px;margin-top:28px;border-bottom:1px solid #ddd}.t{overflow-x:auto}"
            "table{border-collapse:collapse;font-size:13px}td,th{border-bottom:1px solid #ddd;padding:5px 8px;text-align:left;"
            "vertical-align:top}th{background:#eee}img{max-width:100%;margin:8px 0}code{background:#eee;padding:0 3px}"
+           "header{display:flex;align-items:center;gap:12px;padding:4px 0 10px;border-bottom:1px solid #ddd}"
+           "header svg{height:28px;width:auto}header span{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:#6b7480}"
            "@media(prefers-color-scheme:dark){body{background:#15191d;color:#e8ebe6}th{background:#252b31}code{background:#252b31}"
-           "td,th,h2{border-color:#333}}")
+           "td,th,h2,header{border-color:#333}header .letters{stroke:#e8ebe6}}")
     title = re.sub(r"<[^>]+>", "", out[0]) if out else "domeware report"
+    from domeware import brand
+
+    head = f"<header>{brand.svg()}<span>domeware · test report</span></header>"
     return (f"<!doctype html><html lang=en><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
-            f"<title>{title}</title><style>{css}</style>" + "\n".join(out) + "</html>")
+            f"<title>{title}</title><style>{css}</style>{head}" + "\n".join(out) + "</html>")
