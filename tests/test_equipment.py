@@ -107,3 +107,14 @@ def test_tails_stop_at_a_pause_and_keep_the_last_state():
     assert list(keep) == [0, 1, 2, 3, 4, 5]
     assert segs[3][:, 0].tolist() == [0, 1, 2, 3]  # whole history before the pause
     assert segs[5][:, 0].tolist() == [4, 5]  # never drawn across the 10 s silence
+
+
+def test_labels_rise_until_none_hides_another_in_the_opening_view():
+    cam = ([0.0, -500.0, 400.0], [0.0, 0.0, 20.0])  # from the south, steeply, as the replay opens
+    close = [(10.0, 20.0, 5.0, "Radar operator cabin"), (15.0, 25.0, 3.0, "PR200 + drone pilot"),
+             (12.0, 30.0, 2.0, "Weather station")]
+    lifts = equipment.label_lifts(close, cam, fixed=[(0.0, 0.0, 0.0, "radar")])
+    assert len(set(lifts)) == 3 and max(lifts) > 0  # three names on one spot end up at three heights
+    apart = [(-400.0, 300.0, 0.0, "west"), (400.0, 300.0, 0.0, "east")]
+    assert equipment.label_lifts(apart, cam) == [0.0, 0.0]  # far apart on screen: nobody moves
+    assert equipment.label_lifts(close[:1], None) == [equipment.LABEL_STEP_M]  # no camera: a step per near label

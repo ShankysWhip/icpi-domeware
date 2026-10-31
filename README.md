@@ -55,14 +55,14 @@ one clock (numbers in monospace, small spaced labels, status lights):
   (bright where the radar tracked it, hatched red where it did not), radar tracks alive, events, screenshots as
   thumbnails (hover for a preview, click for full size) and wind. Wheel zooms, double-click fits the activity.
 - **Menu** (☰ top left, or M): the session, what data the replay has, view switches (panels, UTC/local, loop,
-  glass panels: they turn solid by themselves if playback runs slowly; presentation: full screen and the pointer
-  hides when it rests, for filming or a big screen), the report and the Google Earth file, and the keys.
+  glass panels: they turn solid by themselves if playback runs slowly), the report and the Google Earth file, and
+  the keys.
 - **A view as one line:** `uv run dw hud <session> --at 13:45:10 --open over,radar` opens that moment (UTC) with
   those instruments; **C** (or Menu → This view) copies the current view as that line, to paste in chat. **R**
   reloads at the same moment; when the HUD's files change while it is open, a *New version* button offers that
   reload (a change in domeware's server code asks for Start replay again).
 - Keys (the **?** button lists them too): Space play/pause, ←/→ 5 s, Shift ←/→ 60 s, Home/End, 1–6 instruments,
-  P panels, M menu, C copy this view, R reload here, F presentation, Esc close.
+  P panels, M menu, C copy this view, R reload here, Esc close.
 
 The look and the rules behind it are in [docs/UI.md](docs/UI.md).
 

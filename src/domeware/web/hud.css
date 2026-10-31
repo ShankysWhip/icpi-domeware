@@ -413,21 +413,23 @@ body.solid .glass { background: rgba(255, 255, 255, .97); -webkit-backdrop-filte
 .tick span { position: absolute; top: 6px; left: 5px; font: 10px var(--mono); color: var(--muted); white-space: nowrap; }
 .tick.minor { border-left-color: #eaeef3; }
 .gridline { position: absolute; top: 0; bottom: 0; border-left: 1px solid #f1f4f8; pointer-events: none; }
-.band { position: absolute; top: 4px; bottom: 4px; border-radius: 2px; border: 1px solid rgba(10, 141, 182, .35); background: rgba(10, 141, 182, .09);
-  overflow: hidden; font: 650 9.5px/1 var(--sans); letter-spacing: .12em; color: var(--accent-2); display: flex; align-items: center; padding-left: 8px; white-space: nowrap; }
-.band.run { border-color: rgba(194, 123, 12, .4); background: rgba(194, 123, 12, .1); color: #8a5708; }
-.band.hdr { border-style: dashed; border-color: rgba(98, 82, 204, .5); background: rgba(98, 82, 204, .07); color: var(--violet); }
-.seg-fly { position: absolute; height: 4px; opacity: .45; }
-.seg-trk { position: absolute; height: 6px; }
-.seg-lost { position: absolute; height: 6px; background: repeating-linear-gradient(135deg, rgba(207, 58, 87, .65) 0 3px, rgba(207, 58, 87, .12) 3px 6px); }
+/* calm lanes: soft fills, thin edges, colour only where it says something */
+.band { position: absolute; top: 4px; bottom: 4px; border-radius: 2px; border: 1px solid rgba(79, 134, 163, .3); background: rgba(79, 134, 163, .07);
+  overflow: hidden; font: 650 9.5px/1 var(--sans); letter-spacing: .12em; color: #3f6f88; display: flex; align-items: center; padding-left: 8px; white-space: nowrap; }
+.band.run { border-color: rgba(122, 108, 86, .28); background: rgba(122, 108, 86, .07); color: #6f6350; }
+.band.hdr { border-style: dashed; border-color: rgba(98, 82, 204, .35); background: rgba(98, 82, 204, .04); color: #6a62a8; }
+.seg-fly { position: absolute; height: 4px; opacity: .3; }
+.seg-trk { position: absolute; height: 5px; border-radius: 1px; }
+.seg-lost { position: absolute; height: 5px; border-radius: 1px;
+  background: repeating-linear-gradient(135deg, rgba(196, 92, 110, .38) 0 3px, rgba(196, 92, 110, .07) 3px 6px); }
 .lane-note { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); font-size: 10.5px; color: var(--dim); white-space: nowrap; }
-.ev { position: absolute; top: 50%; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; transform: rotate(45deg); border-radius: 1px;
-  background: var(--accent); border: 1.5px solid #fff; box-shadow: 0 1px 2px rgba(16, 24, 40, .25); cursor: pointer; transition: transform .12s ease; }
+.ev { position: absolute; top: 50%; width: 8px; height: 8px; margin: -4px 0 0 -4px; transform: rotate(45deg); border-radius: 1px;
+  background: #4f86a3; border: 1.5px solid #fff; box-shadow: 0 0 0 1px rgba(16, 24, 40, .12); cursor: pointer; transition: transform .12s ease; }
 .ev:hover { transform: rotate(45deg) scale(1.35); }
-.ev.note { background: var(--amber); }
-.ev.drone { background: var(--green); }
-.ev.run { background: var(--violet); }
-.ev.radar { background: var(--red); }
+.ev.note { background: #b88a4a; }
+.ev.drone { background: #5b9a7a; }
+.ev.run { background: #8a84bf; }
+.ev.radar { background: #c27585; }
 .thumb { position: absolute; width: 50px; height: 31px; margin-left: -25px; border-radius: 2px; overflow: hidden; cursor: pointer;
   border: 2px solid #fff; box-shadow: 0 1px 4px rgba(16, 24, 40, .25); background: #000; transition: transform .12s; }
 .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -500,9 +502,6 @@ body.solid .glass { background: rgba(255, 255, 255, .97); -webkit-backdrop-filte
 /* dw shots: a still picture (no motion, no focus rings) */
 body.shot *, body.shot *::before, body.shot *::after { animation: none !important; transition: none !important; }
 body.shot :focus-visible { outline: none; }
-/* presentation (F): full screen, the pointer hides when it rests, no tooltips or update notes */
-body.present.idle, body.present.idle * { cursor: none !important; }
-body.present #tip, body.present #update { display: none !important; }
 
 /* ---------- tooltip & lightbox ---------- */
 .tip { position: fixed; z-index: 50; pointer-events: none; max-width: 380px; padding: 9px 11px; border-radius: var(--r); background: var(--panel);

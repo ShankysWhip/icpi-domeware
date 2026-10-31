@@ -58,6 +58,11 @@ export function ink(hex) {
   const k = 0.52 / lum;
   return "#" + [r, g, b].map((c) => Math.round(c * k).toString(16).padStart(2, "0")).join("");
 }
+// a calmer, opaque version of a colour (mixed with white): for long stripes that should not shout
+export function soften(hex, k = 0.5) {
+  const n = parseInt(String(hex).slice(1), 16);
+  return "#" + [n >> 16, (n >> 8) & 255, n & 255].map((c) => Math.round(c + (255 - c) * k).toString(16).padStart(2, "0")).join("");
+}
 export const KIND_COLOR = { radar: "#d9620b", operator: "#b7700b", drone_home: "#475569", pilot: "#a3540a", weather: "#0a8db6",
   rf: "#6252cc", camera: "#0f766e", sensor: "#4f46e5", effector: "#cf3a57", other: "#64748b" };
 export const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);

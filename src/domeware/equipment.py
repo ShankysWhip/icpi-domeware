@@ -30,7 +30,7 @@ RGB = {"radar": [235, 110, 0], "operator": [215, 125, 20], "drone_home": [95, 11
 DEFAULT_HEIGHT_M = {"drone_home": 0.0, "pilot": 1.7, "operator": 1.5, "rf": 1.5, "weather": 2.0, "camera": 2.0}
 COLUMNS = ["name", "kind", "lat_deg", "lon_deg", "height_m", "heading_deg", "fov_deg", "range_m", "note"]
 KIND_LABEL = {"drone_home": "take-off", "rf": "RF analyser", "weather": "weather station"}
-LABEL_NEAR_M, LABEL_STEP_M = 60.0, 10.0  # labels closer than this to one already drawn go up by a step each
+LABEL_NEAR_M, LABEL_STEP_M = 140.0, 18.0  # labels closer than this to one already drawn go up by a step each
 WIND_M_PER_MS = 10.0  # arrow length in the replay: 10 m per 1 m/s of wind
 
 
@@ -125,8 +125,58 @@ def _slug(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9_]+", "_", name).strip("_") or "item"
 
 
-def log_equipment(rec, s: Session, site: dict, span: tuple[pd.Timestamp, pd.Timestamp] | None, stats: dict) -> list[str]:
-    """Draw every item in world/equipment; the on-site wind as an arrow at the weather station. Returns legend lines."""
+def label_lifts(items: list[tuple[float, float, float, str]], camera=None, fixed=(), fov_deg: float = 55.0,
+                view_h_px: float = 560.0) -> list[float]:
+    """How high (m) each label goes so that none hides another. With the opening camera (position, target) the names
+    are projected to the screen and each, nearest first, rises in steps of about 6 screen pixels until its box is clear
+    of the others (`fixed` names stay put: the radar's, the north arrow's). Without a camera: a step up for every
+    earlier label within LABEL_NEAR_M. A small view (a laptop) is assumed, so a bigger window only spreads them further."""
+    if camera is None:
+        placed, out = [(0.0, 0.0)], []
+        for e, n, _u, _text in items:
+            out.append(LABEL_STEP_M * sum(1 for pe, pn in placed if np.hypot(e - pe, n - pn) < LABEL_NEAR_M))
+            placed.append((e, n))
+        return out
+    pos, target = (np.asarray(v, dtype=float) for v in camera)
+    fwd = (target - pos) / np.linalg.norm(target - pos)
+    right = np.cross(fwd, [0.0, 0.0, 1.0])
+    right /= np.linalg.norm(right)
+    up = np.cross(right, fwd)
+    focal = view_h_px / 2 / np.tan(np.radians(fov_deg) / 2)
+
+    def box(e, n, u, text):
+        v = np.array([e, n, u]) - pos
+        d = float(v @ fwd)
+        if d <= 1.0:
+            return None  # behind the camera
+        x, y, w = float(v @ right) / d * focal, float(v @ up) / d * focal, 7.5 * len(text) + 12
+        return (x - w / 2, x + w / 2, y - 6, y + 16)
+
+    def clear(b, taken):
+        return all(b[1] < t[0] or t[1] < b[0] or b[3] < t[2] or t[3] < b[2] for t in taken)
+
+    taken = [b for b in (box(*f) for f in fixed) if b]
+    depth = [float((np.array(it[:3]) - pos) @ fwd) for it in items]
+    out = [0.0] * len(items)
+    for i in sorted(range(len(items)), key=lambda k: depth[k]):
+        e, n, u, text = items[i]
+        step = 6.0 * max(depth[i], 1.0) / (focal * max(abs(float(up[2])), 0.2))  # metres that rise 6 px on screen
+        lift, b = 0.0, None
+        for k in range(60):
+            lift = k * step
+            b = box(e, n, u + lift, text)
+            if b is None or clear(b, taken):
+                break
+        out[i] = float(lift)
+        if b is not None:
+            taken.append(b)
+    return out
+
+
+def log_equipment(rec, s: Session, site: dict, span: tuple[pd.Timestamp, pd.Timestamp] | None, stats: dict,
+                  camera=None) -> list[str]:
+    """Draw every item in world/equipment; the on-site wind as an arrow at the weather station. Returns legend lines.
+    `camera` (position, target) is where the 3D view opens: the labels are placed so none hides another there."""
     import rerun as rr
 
     from domeware.replay import enu
@@ -139,7 +189,7 @@ def log_equipment(rec, s: Session, site: dict, span: tuple[pd.Timestamp, pd.Time
     ground = _ground_heights(s, site, df)
     rows, notes, assumed = [], [], False
     homes = int((df["kind"] == "drone_home").sum())  # a swarm's take-offs side by side: one label for all of them
-    placed = [(0.0, 0.0)]  # labels already drawn (the radar's at the origin); close ones are lifted to stay readable
+    todo = []  # labels: drawn after the loop, once their heights are known
     for r, g in zip(df.itertuples(), ground, strict=True):
         e, n, u = (float(v) for v in enu(r.lat_deg, r.lon_deg, g + r.height_m, site["lat_deg"], site["lon_deg"], site["alt_m"]))
         _, _, u0 = (float(v) for v in enu(r.lat_deg, r.lon_deg, g, site["lat_deg"], site["lon_deg"], site["alt_m"]))
@@ -155,14 +205,8 @@ def log_equipment(rec, s: Session, site: dict, span: tuple[pd.Timestamp, pd.Time
         label = f"take-offs ({homes} drones)" if crowd else r.name
         first = not crowd or r.Index == df.index[df["kind"] == "drone_home"][0]
         rec.log(path, rr.Points3D([[e, n, u]], colors=[rgb], radii=2.5), static=True)
-        if first:  # the label stands on a thin leader, higher for each label already near it, so none hide another
-            lift = LABEL_STEP_M * sum(1 for pe, pn in placed if np.hypot(e - pe, n - pn) < LABEL_NEAR_M)
-            placed.append((e, n))
-            rec.log(f"{path}/label", rr.Points3D([[e, n, u + lift]], colors=[rgb], radii=0.6, labels=[label],
-                                                 show_labels=True), static=True)
-            if lift:
-                rec.log(f"{path}/leader", rr.LineStrips3D([[[e, n, u], [e, n, u + lift]]], colors=[[*rgb, 170]], radii=0.12),
-                        static=True)
+        if first:
+            todo.append((path, e, n, u, label, rgb))
         th = np.linspace(0, 2 * np.pi, 49)
         ring = np.column_stack([e + 8 * np.sin(th), n + 8 * np.cos(th), np.full_like(th, u0 + 0.3)])
         strips = [ring, [[e, n, u0], [e, n, u]]] if r.height_m > 0.3 else [ring]
@@ -177,6 +221,17 @@ def log_equipment(rec, s: Session, site: dict, span: tuple[pd.Timestamp, pd.Time
                     static=True)
         if r.kind == "weather":
             _log_wind(rec, s, [e, n, u + 1.0], span, stats)
+    # each label stands on a thin leader, as high as it needs so that none hides another in the opening view
+    ground0 = (site["ground_level_m"] - site["alt_m"]) if site.get("ground_level_m") is not None else 0.0
+    fixed = [(0.0, 0.0, 0.0, site.get("name") or "radar"), (0.0, 205.0, ground0, "N")]
+    lifts = label_lifts([(e, n, u, label) for _, e, n, u, label, _ in todo], camera, fixed)
+    for (path, e, n, u, label, rgb), lift in zip(todo, lifts, strict=True):
+        rec.log(f"{path}/label", rr.Points3D([[e, n, u + lift]], colors=[rgb], radii=0.6, labels=[label],
+                                             show_labels=True), static=True)
+        if lift:
+            rec.log(f"{path}/leader", rr.LineStrips3D([[[e, n, u], [e, n, u + lift]]], colors=[[*rgb, 170]], radii=0.12),
+                    static=True)
+    stats["label_lifts_m"] = {label: lift for (_, _, _, _, label, _), lift in zip(todo, lifts, strict=True) if lift}
     stats["equipment"] = df[["name", "kind", "source"]].to_dict("records")
     return ["", "# Equipment", "", "| Equipment | Type | From radar | Height AGL | Source |", "|---|---|--:|--:|---|", *rows,
             *(["", "\\* height assumed: not stated in any file"] if assumed else []), *(["", *notes] if notes else [])]
@@ -226,6 +281,7 @@ def _log_wind(rec, s: Session, at: list[float], span, stats: dict) -> None:
     rec.send_columns("world/equipment/wind", indexes=[t],
                      columns=[*rr.Arrows3D.columns(vectors=vec).partition([1] * len(vec)),
                               *rr.Arrows3D.columns(labels=labels)])
+    # the numbers stay off the 3D (they sat on the station's name): hover shows them, the HUD and charts list them
     rec.log("world/equipment/wind", rr.Arrows3D.from_fields(origins=[at], colors=[RGB["weather"]], radii=1.2,
-                                                          show_labels=True), static=True)
+                                                          show_labels=False), static=True)
     stats["wind_arrow_minutes"] = len(w)

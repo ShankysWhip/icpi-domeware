@@ -1,5 +1,5 @@
 // domeware HUD · The timeline dock and the large screenshot view.
-import { $, S, Tip, at, clamp, dur, esc, h, hm, hms, niceStep, padRange, seg, sv } from "./core.mjs";
+import { $, S, Tip, at, clamp, dur, esc, h, hm, hms, niceStep, padRange, seg, soften, sv } from "./core.mjs";
 import { frame, seek, setLoop, setPlaying } from "./app.mjs";
 import { areaPath, linePath } from "./weather.mjs";
 
@@ -153,8 +153,8 @@ export const TL = {
           const stepI = Math.max(1, Math.ceil((i1 - i0) / (this.W / 2)));
           const sub = { t: [], h: [] };
           for (let k = i0; k <= i1; k += stepI) { sub.t.push(ts[k]); sub.h.push(hs[k]); }
-          prof.append(sv("path", { d: areaPath(sub.t, sub.h, X, (v) => y0 - (v / top) * span, y0), fill: dr.ui, opacity: 0.16 }));
-          prof.append(sv("path", { d: linePath(sub.t, sub.h, X, (v) => y0 - (v / top) * span), fill: "none", stroke: dr.ui, "stroke-width": 1, opacity: 0.55 }));
+          prof.append(sv("path", { d: areaPath(sub.t, sub.h, X, (v) => y0 - (v / top) * span, y0), fill: dr.ui, opacity: 0.1 }));
+          prof.append(sv("path", { d: linePath(sub.t, sub.h, X, (v) => y0 - (v / top) * span), fill: "none", stroke: dr.ui, "stroke-width": 1, opacity: 0.4 }));
         });
         L.drones.append(prof);
       }
@@ -167,7 +167,7 @@ export const TL = {
         }
         for (const [a, b] of dr.tracked) {
           if (!within(a, b)) continue;
-          L.drones.append(h("div", { class: "seg-trk", style: `left:${X(a)}px;width:${Math.max(2, X(b) - X(a))}px;top:${y - 3}px;background:${dr.ui}`, title: `${dr.name}: tracked by the radar` }));
+          L.drones.append(h("div", { class: "seg-trk", style: `left:${X(a)}px;width:${Math.max(2, X(b) - X(a))}px;top:${y - 3}px;background:${soften(dr.ui)}`, title: `${dr.name}: tracked by the radar` }));
         }
       });
     } else if (d.flights_header.length) {
@@ -176,15 +176,18 @@ export const TL = {
     // radar density
     if (d.radar) {
       const r = d.radar, max = Math.max(1, ...r.alive), lh = laneH("radar"), bins = Math.max(1, Math.floor(this.W / 2));
-      let path = "";
+      let top = "";  // tracks alive as a soft area with a thin top line (a solid bar was loud)
       for (let k = 0; k < bins; k++) {
         const ta = v0 + ((v1 - v0) * k) / bins, tb = v0 + ((v1 - v0) * (k + 1)) / bins;
         const ia = Math.max(0, Math.floor((ta - r.t0) / r.step_ms)), ib = Math.min(r.alive.length, Math.ceil((tb - r.t0) / r.step_ms));
         let m = 0;
         for (let i = ia; i < ib; i++) m = Math.max(m, r.alive[i]);
-        if (m) path += `M${(k * 2).toFixed(0)},${lh}V${(lh - 2 - (m / max) * (lh - 6)).toFixed(1)}`;
+        const y = (m ? lh - 2 - (m / max) * (lh - 7) : lh).toFixed(1);
+        top += `${top ? "L" : "M"}${k * 2},${y}L${k * 2 + 2},${y}`;
       }
-      const svg = sv("svg", { viewBox: `0 0 ${this.W} ${lh}`, preserveAspectRatio: "none" }, sv("path", { d: path, stroke: "#0a8db6", "stroke-width": 1.6, opacity: 0.8 }));
+      const svg = sv("svg", { viewBox: `0 0 ${this.W} ${lh}`, preserveAspectRatio: "none" },
+        sv("path", { d: `${top}L${bins * 2},${lh}L0,${lh}Z`, fill: "#4f86a3", opacity: 0.14 }),
+        sv("path", { d: top, fill: "none", stroke: "#4f86a3", "stroke-width": 1, opacity: 0.55, "vector-effect": "non-scaling-stroke" }));
       L.radar.append(svg);
     } else L.radar.append(h("div", { class: "lane-note" }, d.status.drone_logs_encrypted || d.status.screens ? "radar data pending (third party)" : "no radar data"));
     // events
@@ -217,10 +220,10 @@ export const TL = {
       const lh = laneH("wind"), top = Math.max(1, ...[...wx.wind, ...(wx.gust || [])].filter((v) => v !== null));
       const Y = (v) => lh - 3 - (v / top) * (lh - 7);
       const svg = sv("svg", { viewBox: `0 0 ${this.W} ${lh}`, preserveAspectRatio: "none" },
-        sv("defs", {}, sv("linearGradient", { id: "gw2", x1: 0, y1: 0, x2: 0, y2: 1 }, sv("stop", { offset: "0%", "stop-color": "#0a8db6", "stop-opacity": 0.3 }), sv("stop", { offset: "100%", "stop-color": "#0a8db6", "stop-opacity": 0 }))),
+        sv("defs", {}, sv("linearGradient", { id: "gw2", x1: 0, y1: 0, x2: 0, y2: 1 }, sv("stop", { offset: "0%", "stop-color": "#4f86a3", "stop-opacity": 0.16 }), sv("stop", { offset: "100%", "stop-color": "#0a8db6", "stop-opacity": 0 }))),
         sv("path", { d: areaPath(wx.t, wx.wind, X, Y, lh), fill: "url(#gw2)" }),
-        sv("path", { d: linePath(wx.t, wx.wind, X, Y), fill: "none", stroke: "#0a8db6", "stroke-width": 1.4 }),
-        wx.gust ? sv("path", { d: linePath(wx.t, wx.gust, X, Y), fill: "none", stroke: "#d48a0e", "stroke-width": 1, "stroke-dasharray": "4 3", opacity: 0.85 }) : null);
+        sv("path", { d: linePath(wx.t, wx.wind, X, Y), fill: "none", stroke: "#4f86a3", "stroke-width": 1.2, opacity: 0.85 }),
+        wx.gust ? sv("path", { d: linePath(wx.t, wx.gust, X, Y), fill: "none", stroke: "#b88a4a", "stroke-width": 1, "stroke-dasharray": "4 3", opacity: 0.6 }) : null);
       L.wind.append(svg);
     } else L.wind.append(h("div", { class: "lane-note" }, "no weather data"));
     this.playhead();

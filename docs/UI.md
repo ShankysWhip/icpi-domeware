@@ -44,7 +44,11 @@ ICPI orange (logo only): #f39200.
   with a small unit; a 15-minute trend line or squares; one quiet line under it.
 - **Choices**: segmented control for one of a few, chips for several, a choice list (dropdown) for many, a switch
   for on/off in the menu. All react on press.
-- **Timeline dock**: white, lanes as tall as their content, accent playhead, screenshot thumbnails.
+- **Timeline dock**: white, lanes as tall as their content, accent playhead, screenshot thumbnails. Calm colours:
+  long stripes use a softened opaque colour (`soften()`, mixed half with white), amounts are soft areas with a thin
+  top line, bands are quiet tints, event marks muted. Bright colour only for the playhead.
+- **3D names**: placed for the opening view so none hides another (`equipment.label_lifts`); a thin leader joins a
+  lifted name to its point. Range-ring names sit on the ring's south side, the wind arrow has no text.
 - **Menu page**: slides in from the left; numbered sections (session, data, view, open, keys).
 - **Data colours**: drones mid-tone (light ones get more ink on white panels, `ink()`), equipment by kind
   (`KIND_COLOR`), weather series fixed (wind teal, gust amber, temperature magenta).

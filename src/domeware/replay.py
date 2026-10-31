@@ -481,8 +481,13 @@ def _clip(w: pd.DataFrame, span, margin: str = "15min") -> pd.DataFrame:
 
 
 def _site_eye(s: Session, site: dict, truths: dict, tracks: pd.DataFrame, owner: dict, ground_z: float):
-    """Open the 3D view on where things happened (drones, their radar tracks, the equipment), steeply from the south:
-    close items keep their labels apart."""
+    position, target = _site_camera(s, site, truths, tracks, owner, ground_z)
+    return rrb.EyeControls3D(kind=rrb.Eye3DKind.Orbital, look_target=target, position=position, eye_up=[0, 0, 1])
+
+
+def _site_camera(s: Session, site: dict, truths: dict, tracks: pd.DataFrame, owner: dict, ground_z: float):
+    """Where the 3D view opens: on where things happened (drones, their radar tracks, the equipment), steeply from the
+    south. Returns (position, target); the equipment labels are placed for this view so none hides another."""
     from domeware.equipment import load as load_equipment
 
     xy = [d[["e_m", "n_m"]].to_numpy() for d in truths.values()]
@@ -496,8 +501,7 @@ def _site_eye(s: Session, site: dict, truths: dict, tracks: pd.DataFrame, owner:
     xy = np.vstack(xy) if xy else np.zeros((1, 2))
     lo, hi = xy.min(axis=0), xy.max(axis=0)
     c, r = (lo + hi) / 2, max(float(np.max(hi - lo)) / 2, 180.0)
-    return rrb.EyeControls3D(kind=rrb.Eye3DKind.Orbital, look_target=[float(c[0]), float(c[1]), ground_z + 20],
-                             position=[float(c[0] - 0.3 * r), float(c[1] - 2.0 * r), ground_z + 1.7 * r], eye_up=[0, 0, 1])
+    return ([float(c[0] - 0.3 * r), float(c[1] - 2.0 * r), ground_z + 1.7 * r], [float(c[0]), float(c[1]), ground_z + 20])
 
 
 def build(s: Session) -> dict:
@@ -538,9 +542,13 @@ def build(s: Session) -> dict:
     rec.log("world/radar/mast", rr.LineStrips3D([[[0, 0, ground_z], [0, 0, 0]]], colors=[[255, 120, 0]], radii=0.8),
             static=True)
     th = np.linspace(0, 2 * np.pi, 181)
-    rings = [np.column_stack([r * np.sin(th), r * np.cos(th), np.full_like(th, ground_z)]) for r in (500, 1000, 2000, 3000)]
-    rec.log("world/radar/range_rings", rr.LineStrips3D(rings, colors=[[255, 160, 60]], radii=0.6,
-                                                       labels=["500 m", "1 km", "2 km", "3 km"]), static=True)
+    radii_m = (500, 1000, 2000, 3000)
+    rings = [np.column_stack([r * np.sin(th), r * np.cos(th), np.full_like(th, ground_z)]) for r in radii_m]
+    rec.log("world/radar/range_rings", rr.LineStrips3D(rings, colors=[[255, 160, 60]], radii=0.6), static=True)
+    # each ring's name on its south side, toward the opening camera (a strip's own label sits at its centre: the radar)
+    rec.log("world/radar/range_rings/labels", rr.Points3D([[0, -r, ground_z + 3] for r in radii_m], colors=[[196, 98, 0]],
+                                                          radii=0.5, labels=["500 m", "1 km", "2 km", "3 km"],
+                                                          show_labels=True), static=True)
     # a north arrow on the ground at the radar: which way is which from any camera angle
     rec.log("world/radar/north", rr.LineStrips3D(
         [[[0, 60, ground_z], [0, 190, ground_z]], [[-16, 166, ground_z], [0, 190, ground_z], [16, 166, ground_z]]],
@@ -673,7 +681,8 @@ def build(s: Session) -> dict:
 
     span = _activity_span(s, truths, tracks_all)
     stats["activity_utc"] = [str(span[0]), str(span[1])] if span else None
-    kit_legend = log_equipment(rec, s, site, span, stats)
+    kit_legend = log_equipment(rec, s, site, span, stats,
+                               camera=_site_camera(s, site, truths, tracks_all, owner, ground_z))
     show_legend = bool(truths or kit_legend)
     if show_legend:
         lines = (legend if truths else []) + kit_legend

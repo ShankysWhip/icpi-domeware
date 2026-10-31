@@ -1,6 +1,6 @@
 // domeware HUD · The menu page (top left).
 import { $, S, at, h, hm, placeAll, seg } from "./core.mjs";
-import { FX, Present, View, setGlass, setLoop, setTz } from "./app.mjs";
+import { FX, View, setGlass, setLoop, setTz } from "./app.mjs";
 import { Drones, Panels, Radar, X_SVG } from "./panels.mjs";
 
 // ---------- menu page (top left) ----------
@@ -25,7 +25,6 @@ export const Drawer = {
     this.loopSw = sw(S.loop, () => setLoop(!S.loop));
     this.glassSw = sw(S.glass, () => { FX.manual = true; setGlass(!S.glass); });
     this.copyBtn = h("button", { class: "copybtn", onclick: () => View.copy() }, "Copy");
-    this.presentSw = sw(false, () => Present.set(!Present.on));
     this.tzSeg = seg([["UTC", "UTC"], ["LOCAL", "Local"]], S.tz, setTz);
     this.links = [
       link("report.html", "Session report", '<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h7"/>'),
@@ -33,7 +32,7 @@ export const Drawer = {
     ];
     const keys = [["Space", "play / pause"], ["← →", "5 s back / forward (Shift: 60 s)"], ["Home End", "start / end of the activity"],
       ["1 – 6", "open or close an instrument"], ["P", "hide or show the panels"], ["M", "this menu"], ["Esc", "close"],
-      ["C", "copy this view"], ["R", "reload at this moment"], ["F", "presentation: full screen, pointer hidden"], ["Wheel", "zoom the timeline"], ["Dbl-click", "fit the timeline to the activity"]];
+      ["C", "copy this view"], ["R", "reload at this moment"], ["Wheel", "zoom the timeline"], ["Dbl-click", "fit the timeline to the activity"]];
     $("#drawer").append(
       h("div", { class: "dr-head" }, h("span", { html: MARK }), h("b", {}, "DOMEWARE"), h("span", {}, "MENU"), this.closeBtn),
       h("div", { class: "dr-body" },
@@ -54,8 +53,7 @@ export const Drawer = {
           ctl("Time", "UTC for evidence, local for the field team", this.tzSeg),
           ctl("Loop", "start again at the end of the activity", this.loopSw),
           ctl("Glass panels", "the map shows through; turns off by itself if playback is slow", this.glassSw),
-          ctl("This view", "this moment and these instruments as one line, to show someone exactly this", this.copyBtn, "C"),
-          ctl("Presentation", "full screen; the pointer hides when it rests: for filming or a big screen", this.presentSw, "F")),
+          ctl("This view", "this moment and these instruments as one line, to show someone exactly this", this.copyBtn, "C")),
         sec("04", "Open", ...this.links),
         sec("05", "Keys", h("div", { class: "dr-keys" }, ...keys.flatMap(([k, v]) => [h("kbd", {}, k), h("span", {}, v)])))),
       h("div", { class: "dr-foot" }, `Replay built ${String(d.generated_utc).slice(0, 16).replace("T", " ")} UTC · id ${String(d.recording_id).slice(0, 8)}`,
