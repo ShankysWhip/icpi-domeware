@@ -1,0 +1,18 @@
+# Who approves what (docs/decisions/0001). Each line is a path and its owner(s); the last matching line wins.
+# Each developer approves their own areas; Niklas approves the shared ones. On GitHub's free plan this file is the
+# written map: GitHub requests and enforces code-owner reviews on private repos only on paid plans.
+*                            @ShankysWhip
+
+# Shared areas: Niklas approves
+/docs/DATA.md                @ShankysWhip
+/docs/decisions/             @ShankysWhip
+/src/domeware/report.py      @ShankysWhip
+/src/domeware/courageous.py  @ShankysWhip
+/src/domeware/scorecard.py   @ShankysWhip
+/.github/                    @ShankysWhip
+/AGENTS.md                   @ShankysWhip
+/CONTRIBUTING.md             @ShankysWhip
+/CLAUDE.md                   @ShankysWhip
+
+# The second developer's areas: add when agreed, for example
+# /src/domeware/robin_offline/  @their-github-name

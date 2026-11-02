@@ -294,6 +294,9 @@ captions 1.5 s, RTKLIB 18 000 fixes 0.14 s, MAVLink tlog 72 000 positions 0.7 s,
 - **`dw list`** shows every session in one table and writes `domeware-data/sessions/index.html`.
 - **`dw doctor`** checks a laptop: Python, packages, height grids, leap-second table, viewer. It prints a fix for
   anything missing and changes nothing. New co-worker: `git clone`, `uv sync`, `uv run dw doctor`.
+- **Working together:** one repo, one branch and pull request per task, GitHub runs the tests on every pull request,
+  areas of ownership in `.github/CODEOWNERS`: [CONTRIBUTING.md](CONTRIBUTING.md). The same rules for every AI
+  assistant: [AGENTS.md](AGENTS.md). The data model all tools share: [docs/DATA.md](docs/DATA.md).
 
 ## Rules
 

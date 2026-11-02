@@ -23,11 +23,17 @@ full decision record lives outside the repo (`domeware-decision.md`).
 
 ## Working rules
 
-- A bug fix lands with a test that was seen failing first. `uv run pytest -q` and `uv run ruff check src tests` stay
-  green; the ruff rules are pinned in `pyproject.toml`.
+- A bug fix lands with a test that was seen failing first. `uv run pytest -q` and `uv run ruff check src tests scripts`
+  stay green; the ruff rules are pinned in `pyproject.toml`.
 - Render it and look: a change to a converter or a picture regenerates the quicklooks and someone looks at them.
 - Thresholds are calibrated on real data, never on hope. Numbers in docs come from the tools.
 - Keep labels apart in docs and notes: verified, [inferred], [estimate], [decision].
 - The Rerun viewer binds to 127.0.0.1 only (`dw view`): a listener on all interfaces makes Windows create firewall
   block rules that need an admin to remove.
 - Commit messages say why. Plan before big changes.
+
+## Team rules
+
+Two developers and their AI assistants share this repo. Follow `AGENTS.md`: one issue, one branch, one pull request;
+never push to `main`; tests green before a merge; stay in your area (`.github/CODEOWNERS`). The session data model in
+`docs/DATA.md` is a contract between all tools. Workflow: `CONTRIBUTING.md`.

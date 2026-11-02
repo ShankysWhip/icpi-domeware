@@ -1,0 +1,32 @@
+# Tests on GitHub: every pull request and every change to main runs the same checks as on the laptop. A pull request
+# is merged only when this is green. Real-data and Edge tests skip here (no session data, no viewer files).
+name: tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: windows-latest  # the team's laptops run Windows
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+          enable-cache: true
+      - name: Install exactly the locked versions
+        run: uv sync --locked
+      - name: Lint
+        run: uv run ruff check src tests scripts
+      - name: Tests
+        run: uv run pytest -q

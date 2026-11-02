@@ -24,6 +24,10 @@ def test_a_read_tlog_is_not_left_locked(tmp_path):
 
 
 def test_a_cut_rtklib_line_is_skipped_and_counted(tmp_path):
+    from domeware.adapters import truth as T
+
+    if not (T.PROJ_DIR / "fi_nls_fin2023n2000.tif").exists():
+        pytest.skip("N2000 geoid grid not on this machine (dw setup)")  # e.g. the GitHub test machine
     p = tmp_path / "rover.pos"
     good = "2026/10/28 09:00:0{}.000   65.170000000   26.040000000   120.0000   1  18"
     p.write_text("% GPST latitude longitude height Q ns\n" + "\n".join(good.format(i) for i in range(3))
