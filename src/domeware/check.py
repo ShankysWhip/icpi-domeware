@@ -66,6 +66,27 @@ def run(s: Session, radar_gap_s: float = 10.0, log_gap_s: float = 3.0) -> int:
         else:
             ok(msg)
 
+    # the radar's height system, from its own status: settled before any height is compared with GPS
+    from domeware.datum import robin_height_datum
+
+    hd = robin_height_datum(s)
+    if hd:
+        nums = f"radar ground level {hd['radar_ground_m']:.1f} m"
+        if hd["map_ground_m"] is not None:
+            nums += f", map (N2000) {hd['map_ground_m']:.1f} m, difference {hd['difference_m']:+.1f} m"
+        if hd["geoid_m"] is not None:
+            nums += f", geoid here {hd['geoid_m']:.1f} m"
+        if hd["verdict"] == "orthometric":
+            ok(f"radar heights are orthometric (N2000 / sea level): {nums}")
+        elif hd["verdict"] == "ellipsoidal":
+            warn(f"radar heights are ellipsoidal (WGS84), not sea level: {nums}; the geoid height must come off first")
+        else:
+            warn(f"radar height system unclear ({hd['why']}): {nums}; ask for the radar's export settings")
+        site = s.manifest.get("site")
+        if site is not None:
+            site["alt_datum_check"] = {**hd, "checked_utc": pd.Timestamp.now(tz="UTC").isoformat(timespec="seconds")}
+            s.save()
+
     # drones
     from domeware.replay import truth_files
 

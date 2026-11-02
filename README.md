@@ -169,8 +169,14 @@ All three run inside `dw run` when drone truth exists.
 
 ## In the field and after
 
+- **`dw survey <folder>`**: what is in a data drop (a drive, an export), read in place without copying: every file
+  recognised as `dw ingest` would, its size, the UTC span of the radar's XML, and at the end what to ingest and what
+  to leave on the drive (raw radar recordings are not needed: the tracks come from the XML).
 - **`dw check <session>`** (offline, seconds): did the radar record the whole flight, does every drone log have
   positions without gaps, do drone and radar clocks overlap, can every video be timed. OK / WARN / FAIL per line.
+  It also tells the radar's height system from its own status: its ground level against the NLS map (N2000) at the
+  radar. Equal: sea level (N2000); higher by the geoid height (about 18 m here): ellipsoidal. The 21 Oct Robin data
+  reads 83.4 m against the map's 84.05 m: sea level. The result is kept in the manifest (`site.alt_datum_check`).
 - **`dw compare`** also gives the first radar plot near the drone (before any track) and the **radar time shift**: how
   many seconds the radar's times must move to fit GPS best (latency plus clock). It fills scorecard check B2.
 - **`dw report`** writes `views/report.html` too: one file with the pictures inside, opens on a phone.

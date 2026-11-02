@@ -42,3 +42,50 @@ def nls_layer_shift(lat: float, lon: float, epoch: float | None = None) -> list[
     """Translation that moves NLS (ETRS89) layers onto GPS positions. Horizontal only: heights are aligned separately."""
     e, n, _ = etrs89_minus_gps_enu(lat, lon, epoch)
     return [float(-e), float(-n), 0.0]
+
+
+SAME_M = 3.0  # map heights and the radar's own may differ this much at the mast (2 m DEM, a building, a pad)
+
+
+def robin_height_datum(s) -> dict | None:
+    """Which height system the radar's own altitudes use, read from its status messages: its declared ground level
+    against the NLS map (N2000) at its position. About equal: orthometric (N2000, sea level). Higher by the geoid
+    height (about 17-18 m in Finland): ellipsoidal (WGS84). Anything else: unclear. None without radar status."""
+    import pandas as pd
+    import pyarrow.parquet as pq
+
+    cols = ["s_position_latitude", "s_position_longitude", "s_position_altitude", "s_ground_level"]
+    found = [f for f in sorted(s.streams.glob("**/status.parquet")) if set(cols) <= set(pq.read_schema(f).names)]
+    if not found:
+        return None
+    st = pd.concat([pd.read_parquet(f, columns=cols) for f in found]).dropna()
+    if st.empty:
+        return None
+    lat, lon = float(st["s_position_latitude"].median()), float(st["s_position_longitude"].median())
+    ground, alt = float(st["s_ground_level"].median()), float(st["s_position_altitude"].median())
+    out = {"radar_ground_m": round(ground, 2), "radar_altitude_m": round(alt, 2), "mast_m": round(alt - ground, 2),
+           "map_ground_m": None, "difference_m": None, "geoid_m": None, "verdict": "unclear",
+           "why": "no map heights here (dw env)"}
+    if not (s.env / "dem.tif").exists():
+        return out
+    from domeware.env import sample_dem
+
+    g = sample_dem(s.env / "dem.tif", lat, lon)
+    if g is None:
+        out["why"] = "the radar is outside the map heights"
+        return out
+    d = ground - g
+    out.update(map_ground_m=round(float(g), 2), difference_m=round(d, 2))
+    try:
+        from domeware.adapters.truth import ellipsoidal_to_n2000
+
+        out["geoid_m"] = round(100.0 - float(np.ravel(ellipsoidal_to_n2000([lat], [lon], [100.0]))[0]), 2)
+    except RuntimeError:  # no geoid grid on this laptop: the ellipsoid case cannot be told, the sea-level one can
+        pass
+    if abs(d) <= SAME_M:
+        out.update(verdict="orthometric", why="the radar's ground level matches the map (N2000)")
+    elif out["geoid_m"] is not None and abs(d - out["geoid_m"]) <= SAME_M:
+        out.update(verdict="ellipsoidal", why="the radar's ground level is above the map by the geoid height")
+    else:
+        out["why"] = "neither the map nor the map plus the geoid height matches"
+    return out

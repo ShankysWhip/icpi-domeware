@@ -19,7 +19,8 @@
   dw hud SESSION              the replay HUD: 3D plus clock, weather, equipment and timeline (--play starts it;
                               --at 13:45:10 --open over,radar opens that moment with those instruments)
   dw shots SESSION            full-resolution pictures of the HUD at the user's window size (same --at/--open)
-  dw check SESSION            in the field: is the data complete? (offline, seconds)
+  dw check SESSION            in the field: is the data complete? which height system the radar uses (offline, seconds)
+  dw survey FOLDER            what is in a data drop, read in place: what to ingest, what to leave on the drive
   dw note SESSION "text"      a team note on the UTC clock (--at 09:14:30); shows in the replay and report
   dw seal SESSION             record the hash of every file the team brought (seal.json)
   dw sync SESSION DEST        copy the sealed session to DEST (e.g. an SSD), never delete there, check the copy
@@ -91,6 +92,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--run", help="only this run id")
     p.add_argument("--gate", type=float, default=50.0)
     sub.add_parser("list", help="all sessions in one table").add_argument("root", type=Path, nargs="?")
+    sub.add_parser("survey", help="what is in a data drop, read in place (nothing copied)").add_argument("folder", type=Path)
     sub.add_parser("doctor", help="check this laptop")
     sub.add_parser("app", help="one window with big buttons")
     p = sub.add_parser("hud", help="the replay HUD in an app window")
@@ -169,6 +171,11 @@ def main(argv: list[str] | None = None) -> int:
         df = list_sessions(a.root or DEFAULT_ROOT)
         print(df.to_string(index=False) if len(df) else "no sessions")
         print(f"index: {(a.root or DEFAULT_ROOT) / 'index.html'}")
+        return 0
+    if a.cmd == "survey":
+        from domeware.survey import report
+
+        print(report(a.folder))
         return 0
     s = Session(_session_path(a.session))
     if a.cmd in ("seal", "sync"):
