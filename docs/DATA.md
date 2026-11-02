@@ -5,6 +5,9 @@ whatever comes next. Adding a column is fine; readers ignore columns they do not
 column, or changing what it means or its unit, is a breaking change: its own pull request with a note in
 `docs/decisions/`. The column lists below are taken from real sessions (2 Nov 2026).
 
+Check a session against this page: `uv run dw validate <session>` (OK / WARN / FAIL per table; exit code 1 on a
+FAIL). The same contract lives in `src/domeware/validate.py`, and a test keeps that file and this page in step.
+
 ## A session folder
 
 ```

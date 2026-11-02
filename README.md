@@ -303,6 +303,8 @@ captions 1.5 s, RTKLIB 18 000 fixes 0.14 s, MAVLink tlog 72 000 positions 0.7 s,
 - **Working together:** one repo, one branch and pull request per task, GitHub runs the tests on every pull request,
   areas of ownership in `.github/CODEOWNERS`: [CONTRIBUTING.md](CONTRIBUTING.md). The same rules for every AI
   assistant: [AGENTS.md](AGENTS.md). The data model all tools share: [docs/DATA.md](docs/DATA.md).
+- **`dw validate <session>`** checks a session against that data model: required columns, UTC times, sane values,
+  OK / WARN / FAIL per table. Any tool that writes sessions (the offline Robin app too) can be checked with it.
 
 ## Rules
 

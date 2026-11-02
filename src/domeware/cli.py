@@ -25,6 +25,7 @@
   dw seal SESSION             record the hash of every file the team brought (seal.json)
   dw sync SESSION DEST        copy the sealed session to DEST (e.g. an SSD), never delete there, check the copy
   dw verify SESSION           check raw files against their hashes
+  dw validate SESSION         does the session follow the data contract (docs/DATA.md)? OK / WARN / FAIL per table
   dw info SESSION             show what is in the session
   dw list [ROOT]              all sessions in one table (+ ROOT/index.html)
   dw doctor                   check this laptop has everything domeware needs
@@ -74,7 +75,7 @@ def main(argv: list[str] | None = None) -> int:
         if name == "run":
             p.add_argument("--radius", type=float, default=3000.0, help="environment radius around the radar (m)")
             p.add_argument("--no-env", action="store_true", help="skip terrain/imagery download")
-    for name in ("equipment", "convert", "replay", "verify", "info", "report", "events", "check", "performance", "kml", "timeline", "seal", "courageous"):
+    for name in ("equipment", "convert", "replay", "verify", "info", "report", "events", "check", "performance", "kml", "timeline", "seal", "courageous", "validate"):
         sub.add_parser(name).add_argument("session", type=Path)
     p = sub.add_parser("sync", help="copy a sealed session to another disk and check it")
     p.add_argument("session", type=Path)
@@ -308,6 +309,10 @@ def main(argv: list[str] | None = None) -> int:
         from domeware.viewer import open_replay
 
         print(open_replay(s, start=a.start) + "  (if Windows asks about the firewall, press Cancel)")
+    if a.cmd == "validate":
+        from domeware.validate import main as validate
+
+        return validate(s)
     if a.cmd == "verify":
         problems = s.verify()
         print("\n".join(problems) if problems else f"OK: {len(s.manifest['raw'])} raw files match their hashes")
