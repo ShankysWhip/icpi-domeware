@@ -48,6 +48,7 @@ COMPASS = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "
 TAIL_S = 20.0  # recent path drawn behind every moving object
 TAIL_HZ = 5.0  # the tail is redrawn at most this often
 HOLD_S = 5.0  # a radar track that stops updating disappears after this long (it reappears with its next update)
+CROWD_STEP_S = 1.0  # the tracks nobody follows move on this grid (Robin updates a track about once a second)
 TREES_NEAR_M = 1200.0  # tree tops are drawn only this close to the radar
 CURTAIN_STEP_S = 2.0  # one vertical line from a drone path to the ground every 2 s
 DRONE_COLOUR_NAMES = ["green", "magenta", "cyan", "yellow", "purple", "lime", "pink", "teal", "graphite", "brown"]
@@ -316,6 +317,38 @@ def _clear_after(rec, paths: list[str], t_ns: np.ndarray, hold_s: float) -> None
         for p in paths:
             rec.log(p, rr.Clear(recursive=True))
     rec.reset_time()
+
+
+def _log_crowd(rec, path: str, tr: pd.DataFrame) -> None:
+    """The tracks nobody follows (clutter, birds, cars) as ONE entity: each second, every such track updated within
+    HOLD_S is one point in its class colour. As separate entities with tails and charts, the 29 Oct data's 341 tracks
+    made over 1,300 entities that the viewer walked every frame (the HUD lagged); one entity draws the same picture."""
+    step = int(CROWD_STEP_S * 1e9)
+    tn_all = _ns(tr["t_utc"])
+    grid = np.arange(tn_all.min() // step * step, tn_all.max() + int(HOLD_S * 1e9) + step, step, dtype=np.int64)
+    pos_at, col_at, lab_at = ([[] for _ in grid] for _ in range(3))
+    for tid, g in tr.sort_values("t_utc").groupby("track_id"):
+        tn = _ns(g["t_utc"])
+        i = np.searchsorted(tn, grid, side="right") - 1  # the latest update at or before each step
+        live = (i >= 0) & (grid - tn[np.clip(i, 0, None)] <= HOLD_S * 1e9)
+        classes = set(g["class_name"].dropna())
+        best = max(classes, key=lambda c: CLASS_RANK.index(c) if c in CLASS_RANK else -1) if classes else "UNCLASSIFIED"
+        alarm = bool(g["alarm"].fillna(False).astype(bool).any())
+        color, label = ALARM_RGB if alarm else CLASS_RGB.get(best, [200, 200, 200]), f"{tid} {best}{' ALARM' if alarm else ''}"
+        pos = g[["e_m", "n_m", "u_m"]].to_numpy(np.float32)
+        for k in np.flatnonzero(live):
+            pos_at[k].append(pos[i[k]])
+            col_at[k].append(color)
+            lab_at[k].append(label)
+    lengths = [len(p) for p in pos_at]  # an empty step clears the points: nothing lingers
+    if not sum(lengths):
+        return
+    cols = rr.Points3D.columns(positions=np.vstack([p for ps in pos_at for p in ps]),
+                               colors=np.array([c for cs in col_at for c in cs], np.uint8),
+                               labels=[s for ls in lab_at for s in ls])
+    rec.send_columns(path, indexes=[rr.TimeColumn("utc", timestamp=grid.astype("datetime64[ns]"))],
+                     columns=cols.partition(lengths))
+    rec.log(path, rr.Points3D.from_fields(radii=1.8, show_labels=False), static=True)
 
 
 def _log_tail(rec, path: str, t_ns: np.ndarray, pos: np.ndarray, rgb, radius: float, hold_s: float | None) -> None:
@@ -591,7 +624,11 @@ def build(s: Session) -> dict:
             events += events_for(tr, tid)
         events += [(r["start"], f"drone picked up again after {r['gap_s']:.0f} s (track {r['track_id']})")
                    for r in (c["tracks"] if c else []) if r["gap_s"]]
-        for tid, g in tr.sort_values("t_utc").groupby("track_id"):
+        followed = set(ids) | ({focus} if focus is not None else set()) | {int(k) for k in owner}
+        crowd = tr[~tr["track_id"].isin(followed)]
+        if len(crowd):
+            _log_crowd(rec, "world/tracks/others", crowd)
+        for tid, g in tr[tr["track_id"].isin(followed)].sort_values("t_utc").groupby("track_id"):
             classes = set(g["class_name"].dropna())
             best = max(classes, key=lambda c: CLASS_RANK.index(c) if c in CLASS_RANK else -1) if classes else "UNCLASSIFIED"
             alarm = bool(g["alarm"].fillna(False).astype(bool).any())
