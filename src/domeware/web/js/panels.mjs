@@ -236,8 +236,9 @@ export const Radar = {
           h("div", { class: "track" }, h("i", { style: `width:${share * 100}%;background:${dr.ui}` }))),
         h("div", { class: "pct", style: `color:${share > 0.9 ? "var(--green)" : share > 0.5 ? "var(--amber)" : "var(--red)"}` }, `${Math.round(share * 100)}%`)));
     }
-    root.append(h("div", { class: "rtop" }, this.big, h("div", {}, h("div", { class: "k" }, "Tracks alive now"), this.tot)), bars,
-      d.drones.length ? h("div", { class: "legend-note" }, "Share of airborne seconds with a radar track on the drone.") : null);
+    root.append(h("div", { class: "rtop" }, this.big, h("div", {}, h("div", { class: "k" }, "Tracks alive now"), this.tot)), bars);
+    // DOM append() writes a null as the text "null" (h() skips it): add the note only when there is a drone to explain
+    if (d.drones.length) root.append(h("div", { class: "legend-note" }, "Share of airborne seconds with a radar track on the drone."));
   },
   update() {
     if (!this.big) return;
