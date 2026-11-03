@@ -70,3 +70,16 @@ def test_without_map_heights_the_datum_stays_open(tmp_path):
     hd = datum.robin_height_datum(_session_with_radar_status(tmp_path, ground_m=85.0, map_m=None))
     assert hd["verdict"] == "unclear" and "dw env" in hd["why"]
     assert datum.robin_height_datum(Session(tmp_path / "empty")) is None  # no radar status: nothing to say
+
+
+def test_a_dji_drone_10_m_above_the_radar_reads_10_m_up(tmp_path):
+    from domeware.adapters import dji as D
+    from domeware.adapters import truth as T
+    from domeware.convert import dji_site
+
+    if not (T.PROJ_DIR / "fi_nls_fin2023n2000.tif").exists():
+        pytest.skip("N2000 geoid grid not on this machine (dw setup)")
+    site = dji_site({"lat_deg": 65.0, "lon_deg": 26.0, "alt_m": 97.5, "name": "SIM radar"})  # N2000, as Robin gives it
+    h_ell, _ = D.n2000_to_ellipsoidal(np.array([65.0]), np.array([26.0]), np.array([107.5]))
+    _, _, u = D.enu_from_geodetic(np.array([65.0]), np.array([26.0]), h_ell, site)
+    assert 15 < site.h_ellip_m - 97.5 < 21 and float(u[0]) == pytest.approx(10.0, abs=0.01)  # not 10 m + the geoid

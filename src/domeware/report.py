@@ -42,8 +42,13 @@ def build(s: Session) -> str:
         if "unique_tracks" in st:
             md.append(f"- **{name}**: {st['unique_tracks']} tracks, {st['tracks_kept']} unique track states "
                       f"({st['duplicates_dropped']} repeated states removed), focus track **{st.get('focus_track')}**.")
+    from domeware import dronetracks
+
+    c = dronetracks.for_session(s)
+    if c:
+        md.append(f"- **Drone tracks:** {dronetracks.describe(c)}.")
     if stats.get("events"):
-        md += ["", "Focus-track events (UTC):", ""] + [f"- {e}" for e in stats["events"]]
+        md += ["", "Drone-track events (UTC):", ""] + [f"- {e}" for e in stats["events"]]
     md.append("")
 
     md += ["## Radar vs drone truth", ""]

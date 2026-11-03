@@ -208,6 +208,14 @@ def export(s: Session, *, site: dict, span, truths: dict, errs: dict, tracks: pd
                             "end": _ms(t0 + pd.Timedelta(seconds=float(d["total_time"]))),
                             "distance_m": d.get("total_distance"), "max_height_m": d.get("max_height"),
                             "max_speed_ms": d.get("max_horizontal_speed")})
+    if radar is not None:
+        from domeware.dronetracks import chain, flight_window
+
+        c = chain(tracks, flight_window(s))  # without a drone log, the radar's own DRONE tracks show how it held the drone
+        if c:
+            radar["drone_chain"] = {"held_s": c["held_s"], "share_pct": c["share_pct"],
+                                    "tracks": [{"id": r["track_id"], "start": _ms(r["start"]), "end": _ms(r["end"]),
+                                                "gap_s": r["gap_s"]} for r in c["tracks"]]}
     screens = _screens(s, out / "screens")
     weather = _weather(s, window)
     data = {

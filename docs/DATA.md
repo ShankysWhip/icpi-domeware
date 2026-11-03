@@ -31,9 +31,12 @@ Data never goes into git. Sessions live in `domeware-data/sessions/<name>/`.
 - **Place:** `lat_deg`, `lon_deg` (WGS84) and, where a position is used in 3D, `e_m`, `n_m`, `u_m`: metres east,
   north and up from the radar's declared position (`manifest.json` site), converted through ECEF
   (`replay.enu`). `range_m` is the slant range from the radar.
-- **Height:** every height column states its datum. `alt_m` is the source's own altitude; for Robin its datum is
-  still unverified. `h_above_site_ground_m` is above the radar site's ground level; `h_rel_takeoff_m` above the
-  drone's take-off point.
+- **Height:** every height column states its datum. `alt_m` is the source's own altitude; for Robin it is N2000 (sea
+  level), confirmed on the 21 Oct and 29 Oct 2026 data. `dw check` rechecks it on every session against the NLS map
+  and writes the verdict to the manifest (`site.alt_datum`, `site.alt_datum_check`). Drone heights meet the radar in
+  the same frame: N2000 for SRT, ArduPilot and RTKLIB truth; for DJI both the drone and the radar go to the ellipsoid
+  first. `h_above_site_ground_m` is above the radar site's ground level; `h_rel_takeoff_m` above the drone's take-off
+  point.
 - **Traceability:** `source` names the file or device; Robin rows also carry `raw_ref` (the raw file) and
   `msg_index` (the message in it), and `qflags` (quality flags, 0 = clean).
 

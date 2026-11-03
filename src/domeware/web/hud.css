@@ -270,6 +270,12 @@ body.solid .glass { background: rgba(255, 255, 255, .97); -webkit-backdrop-filte
 .hbar .track i { display: block; height: 100%; }
 .hbar .pct { font: 600 15px/1 var(--mono); text-align: right; }
 .legend-note { margin-top: 10px; font-size: 10.5px; color: var(--dim); }
+.chain { margin-top: 6px; display: grid; gap: 1px; }
+.crow { display: grid; grid-template-columns: 58px 1fr auto; gap: 8px; align-items: baseline; font: 500 11px/1.7 var(--mono); color: var(--dim); }
+.crow b { font-weight: 650; }
+.crow em { font-style: normal; font-size: 10px; }
+.crow.on { color: inherit; }
+.crow.on b { color: var(--green); }
 
 /* events */
 .log { display: flex; flex-direction: column; max-height: 220px; overflow: auto; margin: -2px -4px 0; }

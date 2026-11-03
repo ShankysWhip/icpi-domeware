@@ -91,9 +91,7 @@ def convert_dji_csv(s: Session) -> None:
         return
     from domeware.adapters import dji as D
 
-    site = s.manifest.get("site")
-    ds = D.Site(site["lat_deg"], site["lon_deg"], site["alt_m"], name=site.get("name") or "site",
-                note="radar-declared position, altitude datum unverified") if site else None
+    ds = dji_site(s.manifest.get("site"))
     for f in files:
         try:
             df = pd.read_csv(f, low_memory=False)
@@ -118,6 +116,22 @@ def convert_dji_csv(s: Session) -> None:
         s.manifest["streams"][f"dji/{f.stem}"] = {"adapter": f"dji {D.CONVERTER_VERSION}", "rows": osd.num_rows,
                                                   "ground_from_dem": ground is not None}
         s.note(f"dji: {f.name}: {osd.num_rows} frames, {events.num_rows} events")
+
+
+def dji_site(site: dict | None):
+    """The radar as the DJI adapter's ENU origin. The DJI adapter works in ellipsoidal heights, while the radar's own
+    height is N2000 (dw check confirms it per session), so the site goes to the ellipsoid too. Left in N2000, every DJI
+    height would sit one geoid height (about 18 m) high against the radar."""
+    if not site:
+        return None
+    from domeware.adapters import dji as D
+
+    h, note = site["alt_m"], "radar-declared position; N2000 height moved to the ellipsoid (FIN2023N2000)"
+    try:
+        h = float(D.n2000_to_ellipsoidal(np.array([site["lat_deg"]]), np.array([site["lon_deg"]]), np.array([h]))[0][0])
+    except Exception as e:  # noqa: BLE001 - no geoid grid (dw setup): the DJI heights cannot be made ellipsoidal either
+        note = f"radar-declared position; height NOT moved to the ellipsoid ({type(e).__name__}): DJI u biased by the geoid"
+    return D.Site(site["lat_deg"], site["lon_deg"], h, name=site.get("name") or "site", note=note)
 
 
 def _dem_height_at_home(s: Session, df: pd.DataFrame) -> float | None:

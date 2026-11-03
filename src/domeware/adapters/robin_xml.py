@@ -993,7 +993,7 @@ def build_site(status_df: pd.DataFrame | None, cfg_dir: Path | None, report: dic
             "sensor_id": g("s_id"),
             "position": {"lat_deg": g("s_position_latitude"), "lon_deg": g("s_position_longitude"),
                          "alt_m": g("s_position_altitude"),
-                         "alt_datum": "UNVERIFIED (Robin docs needed: MSL/EGM96? ellipsoid? N2000?)"},
+                         "alt_datum": "UNVERIFIED until dw check compares it with the map (N2000 at Oz-masto, Oct 2026)"},
             "ground_level_m": g("s_ground_level"),
             "antenna_above_ground_m": (None if g("s_ground_level") is None
                                        else round(g("s_position_altitude") - g("s_ground_level"), 3)),

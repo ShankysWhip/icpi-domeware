@@ -239,11 +239,20 @@ export const Radar = {
     root.append(h("div", { class: "rtop" }, this.big, h("div", {}, h("div", { class: "k" }, "Tracks alive now"), this.tot)), bars);
     // DOM append() writes a null as the text "null" (h() skips it): add the note only when there is a drone to explain
     if (d.drones.length) root.append(h("div", { class: "legend-note" }, "Share of airborne seconds with a radar track on the drone."));
+    const ch = d.radar.drone_chain;
+    this.rows = null;
+    if (!d.drones.length && ch) {  // no drone log yet: the radar's own DRONE tracks show how well it held the drone
+      this.rows = ch.tracks.map((r) => h("div", { class: "crow" }, h("b", {}, String(r.id)), h("span", {}, `${hms(r.start)}–${hms(r.end)}`),
+        h("em", {}, r.gap_s ? `back after ${fx(r.gap_s, 0)} s` : "first")));
+      root.append(h("div", { class: "legend-note" }, `Tracks the radar classed DRONE: held ${dur(ch.held_s * 1000, false)}`
+        + (ch.share_pct !== null ? ` · ${ch.share_pct} % of the logged flight` : "")), h("div", { class: "chain" }, ...this.rows));
+    }
   },
   update() {
     if (!this.big) return;
     this.big.textContent = String(this.alive(S.t));
     this.tot.textContent = `${S.data.radar.tracks} tracks in the replay`;
+    if (this.rows) S.data.radar.drone_chain.tracks.forEach((r, i) => this.rows[i].classList.toggle("on", S.t >= r.start && S.t <= r.end));
   },
   alive(t) {
     const r = S.data.radar;

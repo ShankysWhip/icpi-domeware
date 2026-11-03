@@ -263,8 +263,8 @@ pointing where the wind blows), one state per measured minute.
 - **`dw courageous <session>`** (also in `dw run`) writes the radar's output in the **COURAGEOUS data format**
   (CWA 18150 Annex H, JSON Schema 0.4.1): `views/courageous_<radar>_<run>.json`, checked against the official schema,
   with a `.notes.json` beside it that says how IRIS fields were mapped and whether the check passed. Evaluators
-  can open it with their own tools (e.g. track2kml). Heights are the radar's own values: the schema asks for EGM96,
-  and the radar's altitude datum is still unverified.
+  can open it with their own tools (e.g. track2kml). Heights are the radar's own values (N2000, checked by
+  `dw check`): the schema asks for EGM96, so they are passed through, not converted.
 - The schema is fetched by `dw setup` (hash-pinned) and is not copied into this repo: its repository has no licence.
 
 ## Stress test

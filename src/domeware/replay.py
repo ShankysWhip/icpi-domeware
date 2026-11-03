@@ -583,7 +583,14 @@ def build(s: Session) -> dict:
         focus = info_s.get("focus_track")
         if focus is not None:
             focus_ids.append(focus)
-            events += events_for(tr, focus)
+        from domeware.dronetracks import chain
+
+        c = chain(tr)  # every track the radar classed DRONE gets its events, not only the focus track
+        ids = [r["track_id"] for r in c["tracks"]] if c else []
+        for tid in ids + ([focus] if focus is not None and focus not in ids else []):
+            events += events_for(tr, tid)
+        events += [(r["start"], f"drone picked up again after {r['gap_s']:.0f} s (track {r['track_id']})")
+                   for r in (c["tracks"] if c else []) if r["gap_s"]]
         for tid, g in tr.sort_values("t_utc").groupby("track_id"):
             classes = set(g["class_name"].dropna())
             best = max(classes, key=lambda c: CLASS_RANK.index(c) if c in CLASS_RANK else -1) if classes else "UNCLASSIFIED"

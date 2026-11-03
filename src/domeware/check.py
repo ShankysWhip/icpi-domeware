@@ -66,6 +66,12 @@ def run(s: Session, radar_gap_s: float = 10.0, log_gap_s: float = 3.0) -> int:
         else:
             ok(msg)
 
+    from domeware import dronetracks
+
+    c = dronetracks.for_session(s)
+    if c:
+        ok(f"radar's own drone tracks: {dronetracks.describe(c)}")
+
     # the radar's height system, from its own status: settled before any height is compared with GPS
     from domeware.datum import robin_height_datum
 
@@ -85,6 +91,9 @@ def run(s: Session, radar_gap_s: float = 10.0, log_gap_s: float = 3.0) -> int:
         site = s.manifest.get("site")
         if site is not None:
             site["alt_datum_check"] = {**hd, "checked_utc": pd.Timestamp.now(tz="UTC").isoformat(timespec="seconds")}
+            if hd["verdict"] != "unclear":  # the evidence replaces the converter's "UNVERIFIED" in every report
+                site["alt_datum"] = {"orthometric": "N2000 (sea level)", "ellipsoidal": "WGS84 ellipsoidal"}[hd["verdict"]] \
+                    + f", checked by dw check (radar ground {hd['radar_ground_m']:.1f} m vs map)"
             s.save()
 
     # drones

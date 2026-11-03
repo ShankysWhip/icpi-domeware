@@ -2,8 +2,8 @@
 
 Association rule (stated in every report): a radar track belongs to the drone if the median 3D distance between its
 states and the truth position at the same UTC time is below the gate (default 50 m). Truth is interpolated to each
-track state's own time (time of validity). Vertical numbers depend on the radar's altitude datum (unverified until
-the radar owner confirms it), so the horizontal error is the primary figure.
+track state's own time (time of validity). Vertical numbers depend on the radar's altitude datum, which `dw check`
+verifies per session (N2000 on the Oz-masto data); the horizontal error stays the primary figure.
 """
 
 from __future__ import annotations
@@ -251,7 +251,7 @@ def run(s: Session, gate_m: float = 50.0, airborne_m: float = 2.0) -> list[dict]
     s.views.mkdir(parents=True, exist_ok=True)
     results, md = [], [f"# Radar vs drone truth\n\nGate {gate_m:.0f} m (median 3D distance per track), airborne = height above "
                        f"take-off > {airborne_m:.0f} m. Horizontal error is the primary figure; vertical depends on the radar's "
-                       f"altitude datum (unverified).\n"]
+                       f"altitude datum ({(s.manifest.get('site') or {}).get('alt_datum') or 'unverified'}).\n"]
     loaded = {}
     from domeware.replay import read_truth
 

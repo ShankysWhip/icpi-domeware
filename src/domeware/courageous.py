@@ -12,8 +12,8 @@ Mapping from Robin IRIS (written into the sidecar note, too):
   alarm             -> active = Robin's alarm flag; certainty = 1 when active, 0 when not (IRIS gives no alarm
                        certainty; its score is a classification score and is not used for this)
   potential drone plots -> one Detection set, classification "Unknown", no alarm
-  heights           -> the radar's own altitude values. The schema asks for EGM96 heights; the radar's altitude datum
-                       is still UNVERIFIED (see the session report), so heights are passed through, not converted.
+  heights           -> the radar's own altitude values, N2000 as dw check verifies per session (see the report). The
+                       schema asks for EGM96 heights; they are passed through, not converted.
 The schema file is not in the repo (it has no licence); `dw setup` fetches it for validation.
 """
 

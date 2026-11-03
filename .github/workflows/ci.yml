@@ -28,5 +28,9 @@ jobs:
         run: uv sync --locked
       - name: Lint
         run: uv run ruff check src tests scripts
+      - name: Height grids (so the N2000 and geoid tests run here too; they skip if this fails)
+        run: uv run dw setup
+        continue-on-error: true
+        timeout-minutes: 5
       - name: Tests
         run: uv run pytest -q
