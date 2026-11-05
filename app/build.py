@@ -180,7 +180,7 @@ def windows(icondir):
     top = os.path.join(stage_root, 'Orbit')
     os.makedirs(top)
     if not os.path.exists(PY_EMBED):
-        raise SystemExit('missing ' + PY_EMBED)
+        raise SystemExit('missing ' + PY_EMBED + ' (fetch it: python3 tools/fetch_vendor.py)')
     with zipfile.ZipFile(PY_EMBED) as z:
         z.extractall(os.path.join(top, 'python'))
     os.makedirs(os.path.join(top, 'app'))

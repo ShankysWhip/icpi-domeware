@@ -1,0 +1,10 @@
+# Third-party builds: fetched and hash-checked by tools/fetch_vendor.py, never committed
+/web/vendor/maplibre-gl.js
+/web/vendor/maplibre-gl.css
+/vendor/python-win/*.zip
+*.part
+# Build outputs (python3 build.py)
+/build/
+/dist/
+# Real recordings for the tests that need them: never in git (see tests/jsc_prelude.js)
+/tests/real-data/

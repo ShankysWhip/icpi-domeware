@@ -20,7 +20,7 @@ measures how well the radar saw the drone, takes a live radar feed, and keeps wo
 ## How it is built
 
 ```
-web/          the app (HTML/CSS/JS, MapLibre GL JS 5.24.0 vendored) — the same files run on both platforms
+web/          the app (HTML/CSS/JS, MapLibre GL JS 5.24.0 from tools/fetch_vendor.py) — the same files run on both platforms
   js/util.js xml.js aes.js dji.js radar.js weather.js xlsx.js tracks.js   readers (no DOM needed; tested with jsc)
   js/ardupilot.js  ArduPilot DataFlash .BIN (GPS week/ms → UTC) and MAVLink .tlog (one drone per system id)
   js/cwa.js        CWA 18150:2024 metrics and 0-1 scores, one drone or several flying together
@@ -36,6 +36,7 @@ build.py                     builds dist/ (python3 build.py [mac|windows|check])
 tests/                       jsc reader tests (DJI, Robin, ArduPilot, CWA, fleet), helper API test, start/window test, fake radar,
                              make_ardupilot.py (synthetic .BIN/.tlog/radar), fixtures (SIMULATED / SYNTHETIC only)
 tools/license/                orbit-license (Swift, signs license codes) + Orbit License Maker.app (build.sh); vendor's Mac only
+tools/fetch_vendor.py         fetches MapLibre and the Windows embeddable Python (not in git), hash-pinned
 docs/                        Windows test checklist (HTML source; python3 docs/make_checklist.py prints the PDF)
 ```
 
@@ -52,6 +53,7 @@ with settings, DJI keychains and live recordings.
 ## Develop and test
 
 ```
+python3 tools/fetch_vendor.py                     # once: MapLibre and the Windows embeddable Python, hash-checked
 python3 server/orbit_server.py --dev --no-browser --print-url --token devtoken   # then open the printed URL
 python3 tests/test_helper_api.py --base http://127.0.0.1:47615 --token devtoken      # 28 checks incl. live modes
 python3 tests/test_instances.py                     # 17 checks: three starts at once, window watching (temp data folder)
