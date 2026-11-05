@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="en" class="intro-run">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#1c1d20">
+<title>Orbit</title>
+<link rel="icon" href="img/icon.svg?v=2.5" type="image/svg+xml">
+<link rel="icon" href="img/icon-256.png?v=2.5" sizes="256x256" type="image/png">
+<link rel="stylesheet" href="vendor/maplibre-gl.css">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+  <symbol id="i-import" viewBox="0 0 16 16"><path d="M8 2.2v7.4M5.2 6.9L8 9.7l2.8-2.8"/><path d="M2.6 10v1.9c0 .9.7 1.6 1.6 1.6h7.6c.9 0 1.6-.7 1.6-1.6V10"/></symbol>
+  <symbol id="i-drone" viewBox="0 0 16 16"><circle cx="4" cy="4" r="2.3"/><circle cx="12" cy="4" r="2.3"/><circle cx="4" cy="12" r="2.3"/><circle cx="12" cy="12" r="2.3"/><path d="M5.7 5.7l.9.9M10.3 5.7l-.9.9M5.7 10.3l.9-.9M10.3 10.3l-.9-.9"/><rect x="6.5" y="6.5" width="3" height="3" rx=".7"/></symbol>
+  <symbol id="i-radar" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.2"/><circle cx="8" cy="8" r="3.1" stroke-opacity=".55"/><path d="M8 8l4.1-4.1"/><circle cx="10.7" cy="10.4" r="1" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-wind" viewBox="0 0 16 16"><path d="M1.8 6.3h8.3a2.1 2.1 0 1 0-2.1-2.1"/><path d="M1.8 9.7h10.4a2.1 2.1 0 1 1-2.1 2.1"/></symbol>
+  <symbol id="i-live" viewBox="0 0 16 16"><circle cx="8" cy="8" r="1.5" fill="currentColor" stroke="none"/><path d="M5.3 5.3a3.8 3.8 0 0 0 0 5.4M10.7 5.3a3.8 3.8 0 0 1 0 5.4M3.2 3.2a6.8 6.8 0 0 0 0 9.6M12.8 3.2a6.8 6.8 0 0 1 0 9.6"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 16 16"><path d="M8 2.3l5.9 3.1L8 8.5 2.1 5.4z"/><path d="M2.1 8.3L8 11.4l5.9-3.1"/><path d="M2.1 11.1L8 14.2l5.9-3.1" stroke-opacity=".55"/></symbol>
+  <symbol id="i-follow" viewBox="0 0 16 16"><circle cx="8" cy="8" r="4.7"/><circle cx="8" cy="8" r="1.4" fill="currentColor" stroke="none"/><path d="M8 1.2v2.1M8 12.7v2.1M1.2 8h2.1M12.7 8h2.1"/></symbol>
+  <symbol id="i-fit" viewBox="0 0 16 16"><path d="M2.5 5.8V3.6c0-.6.5-1.1 1.1-1.1h2.2M10.2 2.5h2.2c.6 0 1.1.5 1.1 1.1v2.2M13.5 10.2v2.2c0 .6-.5 1.1-1.1 1.1h-2.2M5.8 13.5H3.6c-.6 0-1.1-.5-1.1-1.1v-2.2"/></symbol>
+  <symbol id="i-play" viewBox="0 0 16 16"><path d="M5.2 3.4v9.2c0 .5.5.8.9.5l7-4.6c.4-.2.4-.8 0-1l-7-4.6c-.4-.3-.9 0-.9.5z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 16 16"><rect x="4.2" y="3" width="2.6" height="10" rx=".7" fill="currentColor" stroke="none"/><rect x="9.2" y="3" width="2.6" height="10" rx=".7" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-start" viewBox="0 0 16 16"><rect x="3" y="3.2" width="1.7" height="9.6" rx=".6" fill="currentColor" stroke="none"/><path d="M12.8 3.9v8.2c0 .5-.5.8-.9.5L6.1 8.5c-.4-.2-.4-.8 0-1l5.8-4.1c.4-.3.9 0 .9.5z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-back" viewBox="0 0 16 16"><path d="M7.6 4.3v7.4c0 .4-.5.7-.8.4L2.4 8.4c-.3-.2-.3-.6 0-.8l4.4-3.7c.3-.3.8 0 .8.4zM13.8 4.3v7.4c0 .4-.5.7-.8.4L8.6 8.4c-.3-.2-.3-.6 0-.8L13 3.9c.3-.3.8 0 .8.4z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-fwd" viewBox="0 0 16 16"><path d="M8.4 4.3v7.4c0 .4.5.7.8.4l4.4-3.7c.3-.2.3-.6 0-.8L9.2 3.9c-.3-.3-.8 0-.8.4zM2.2 4.3v7.4c0 .4.5.7.8.4l4.4-3.7c.3-.2.3-.6 0-.8L3 3.9c-.3-.3-.8 0-.8.4z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-export" viewBox="0 0 16 16"><path d="M8 9.6V2.3M5.3 5L8 2.3 10.7 5"/><path d="M5.6 7.2H4.4c-.9 0-1.6.7-1.6 1.6v3.6c0 .9.7 1.6 1.6 1.6h7.2c.9 0 1.6-.7 1.6-1.6V8.8c0-.9-.7-1.6-1.6-1.6h-1.2"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 16 16"><path d="M2.5 4.8h6.2M11.9 4.8h1.6M2.5 11.2h1.6M7.3 11.2h6.2"/><circle cx="10.3" cy="4.8" r="1.6"/><circle cx="5.7" cy="11.2" r="1.6"/></symbol>
+  <symbol id="i-help" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.3"/><path d="M6.2 6.3c0-1 .8-1.8 1.8-1.8s1.8.8 1.8 1.8c0 .8-.5 1.2-1.1 1.5-.4.2-.7.6-.7 1.1v.3"/><circle cx="8" cy="11.3" r=".8" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-close" viewBox="0 0 16 16"><path d="M4.6 4.6l6.8 6.8M11.4 4.6l-6.8 6.8"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 16 16"><path d="M4.8 6.3L8 9.5l3.2-3.2"/></symbol>
+  <symbol id="i-chevr" viewBox="0 0 16 16"><path d="M6.3 4.8L9.5 8l-3.2 3.2"/></symbol>
+  <symbol id="i-check" viewBox="0 0 16 16"><path d="M3.4 8.5l2.9 2.8 6.3-6.6"/></symbol>
+  <symbol id="i-warn" viewBox="0 0 16 16"><path d="M7.1 2.7L1.8 12c-.4.7.1 1.6.9 1.6h10.6c.8 0 1.3-.9.9-1.6L8.9 2.7c-.4-.7-1.4-.7-1.8 0z"/><path d="M8 6.3v3.1"/><circle cx="8" cy="11.3" r=".75" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-info" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.3"/><path d="M8 7.3v4"/><circle cx="8" cy="5" r=".8" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-sidebar" viewBox="0 0 16 16"><rect x="1.8" y="2.8" width="12.4" height="10.4" rx="1.8"/><path d="M9.8 2.8v10.4"/></symbol>
+  <symbol id="i-lanes" viewBox="0 0 16 16"><path d="M2.4 4.5h5.2M9.8 4.5h3.8M2.4 8h8.2M12.8 8h.8M2.4 11.5h3M7.6 11.5h6"/></symbol>
+  <symbol id="i-flight" viewBox="0 0 16 16"><path d="M2.2 8h11.6M4.6 5.6L2.2 8l2.4 2.4M11.4 5.6L13.8 8l-2.4 2.4"/></symbol>
+  <symbol id="i-report" viewBox="0 0 16 16"><path d="M4.2 1.9h4.9l3.1 3.1v8.1c0 .6-.5 1-1 1H4.2c-.6 0-1-.4-1-1V2.9c0-.6.4-1 1-1z"/><path d="M9 2v3h3.1M5.6 8.2h4.8M5.6 10.7h3.2"/></symbol>
+  <symbol id="i-file" viewBox="0 0 16 16"><path d="M4.2 1.9h4.9l3.1 3.1v8.1c0 .6-.5 1-1 1H4.2c-.6 0-1-.4-1-1V2.9c0-.6.4-1 1-1z"/><path d="M9 2v3h3.1"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 16 16"><path d="M10.4 2.7l2.9 2.9-7.6 7.6-3.5.6.6-3.5z"/><path d="M8.9 4.2l2.9 2.9"/></symbol>
+  <symbol id="i-map" viewBox="0 0 16 16"><path d="M1.9 3.9l3.9-1.6 4.4 1.6 3.9-1.6v9.8l-3.9 1.6-4.4-1.6-3.9 1.6z"/><path d="M5.8 2.3v9.8M10.2 3.9v9.8"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 16 16"><path d="M2.2 13.6h11.6"/><path d="M4.6 11V8.4M8 11V4.2M11.4 11V6.6"/></symbol>
+  <symbol id="i-key" viewBox="0 0 16 16"><circle cx="5.4" cy="10.6" r="3"/><path d="M7.5 8.5l6-6M11.3 4.7L13 6.4M9.9 6.1l1.2 1.2"/></symbol>
+  <symbol id="i-demo" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.3"/><path d="M6.7 5.6v4.8c0 .3.3.5.6.3l3.4-2.4c.2-.2.2-.5 0-.7L7.3 5.3c-.3-.1-.6 0-.6.3z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 16 16"><path d="M1.9 4.4c0-.7.5-1.2 1.2-1.2h3l1.5 1.6h5.3c.7 0 1.2.5 1.2 1.2v6.2c0 .7-.5 1.2-1.2 1.2H3.1c-.7 0-1.2-.5-1.2-1.2z"/></symbol>
+  <symbol id="i-sync" viewBox="0 0 16 16"><path d="M13 6.2A5.2 5.2 0 0 0 3.4 5M3 9.8a5.2 5.2 0 0 0 9.6 1.2"/><path d="M3.2 2.6V5h2.4M12.8 13.4V11h-2.4"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 16 16"><rect x="5.3" y="5.3" width="8.2" height="8.2" rx="1.5"/><path d="M10.7 5.3V3.9c0-.8-.6-1.4-1.4-1.4H3.9c-.8 0-1.4.6-1.4 1.4v5.4c0 .8.6 1.4 1.4 1.4h1.4"/></symbol>
+</svg>
+
+<div id="app">
+  <header id="top">
+    <div class="doc"><img src="img/icon.svg?v=2.5" alt="" width="22" height="22"><div class="dt"><b id="docName">Orbit</b><span id="docSub"></span></div></div>
+    <div class="menuwrap">
+      <button id="btnImport" class="tb" aria-haspopup="true" title="Import a drone log, radar data or weather data"><svg><use href="#i-import"/></svg><span>Import</span><svg class="chev"><use href="#i-chev"/></svg></button>
+      <div id="menuImport" class="menu" hidden>
+        <button class="imp" data-kind="drone"><svg><use href="#i-drone"/></svg><span>Drone Log…</span><small data-for="drone"></small></button>
+        <button class="imp" data-kind="radar"><svg><use href="#i-radar"/></svg><span>Radar Data…</span><small data-for="radar"></small></button>
+        <button class="imp" data-kind="weather"><svg><use href="#i-wind"/></svg><span>Weather Data…</span><small data-for="weather"></small></button>
+      </div>
+    </div>
+    <button id="btnLive" class="tb live" title="Live radar feed"><svg><use href="#i-live"/></svg><span id="liveLabel">Live Radar</span></button>
+    <div class="spacer"></div>
+    <div class="seg" role="group" aria-label="View">
+      <button data-view="2d" class="on" title="Map view (2)">2D</button><button data-view="3d" title="3D view (3)">3D</button>
+    </div>
+    <div class="menuwrap">
+      <button id="btnLayers" class="tb" aria-haspopup="true" title="Map style and layers"><svg><use href="#i-layers"/></svg><span>Layers</span></button>
+      <div id="menuLayers" class="menu layers" hidden>
+        <div class="mrow"><span>Map</span><select id="basemap">
+          <option value="satellite">Satellite</option>
+          <option value="hybrid">Satellite with Labels</option>
+          <option value="streets">Streets</option>
+          <option value="topo">Topographic</option>
+          <option value="none">None (Grid)</option>
+        </select></div>
+        <div class="mrow"><span>Path colour</span><select id="pathColor"><option value="status">Radar Status</option><option value="height">Height</option><option value="solid">Plain</option></select></div>
+        <div class="mrow"><span>3D height scale</span><select id="exag"><option value="1">1×</option><option value="2">2×</option><option value="3" selected>3×</option><option value="5">5×</option><option value="10">10×</option></select></div>
+        <hr>
+        <label><input type="checkbox" data-layer="dronePath" checked> Drone path</label>
+        <label><input type="checkbox" data-layer="radarLive" checked> Radar tracks</label>
+        <label><input type="checkbox" data-layer="radarTrails" checked> Radar trails (30 s)</label>
+        <label><input type="checkbox" data-layer="radarAll"> All radar tracks in the file</label>
+        <label><input type="checkbox" data-layer="radarOnlyDrone"> Drone-classified tracks only</label>
+        <label><input type="checkbox" data-layer="plots"> Radar drone plots</label>
+        <label><input type="checkbox" data-layer="errorLine" checked> Position error line</label>
+        <label><input type="checkbox" data-layer="rings" checked> Range rings</label>
+        <label><input type="checkbox" data-layer="labels" checked> Labels</label>
+        <hr>
+        <label><input type="checkbox" data-layer="curtain" checked> Drop lines (3D)</label>
+        <label><input type="checkbox" data-layer="terrain"> Terrain (3D)</label>
+      </div>
+    </div>
+    <span class="tsep"></span>
+    <div class="menuwrap">
+      <button id="btnExport" class="tb" aria-haspopup="true" title="Export"><svg><use href="#i-export"/></svg><span>Export</span></button>
+      <div id="menuExport" class="menu right" hidden>
+        <button data-export="pdf"><svg><use href="#i-report"/></svg><span>Test Report (PDF)…</span><kbd class="sc" data-mac="⌘E">Ctrl+E</kbd></button>
+        <button data-export="report"><svg><use href="#i-report"/></svg><span>Test Report (Web Page)…</span></button>
+        <button data-export="details"><svg><use href="#i-edit"/></svg><span>Test Details…</span><kbd class="sc" data-mac="⌘I">Ctrl+I</kbd></button>
+        <hr>
+        <button data-export="csv"><svg><use href="#i-file"/></svg><span>Timeline (CSV, 1 s)…</span></button>
+        <button data-export="kml"><svg><use href="#i-file"/></svg><span>Tracks for Google Earth (KML)…</span></button>
+        <button data-export="png"><svg><use href="#i-file"/></svg><span>Map Image (PNG)…</span></button>
+        <button data-export="session"><svg><use href="#i-file"/></svg><span>Session (.orbit.json)…</span></button>
+      </div>
+    </div>
+    <button id="btnSettings" class="tb icon" title="Settings" aria-label="Settings"><svg><use href="#i-settings"/></svg></button>
+    <button id="btnHelp" class="tb icon" title="Help (?)" aria-label="Help"><svg><use href="#i-help"/></svg></button>
+    <button id="btnInspector" class="tb icon on" title="Show or hide the inspector" aria-label="Inspector"><svg><use href="#i-sidebar"/></svg></button>
+  </header>
+
+  <main id="main">
+    <section id="mapWrap">
+      <div id="map"></div>
+      <canvas id="overlay"></canvas>
+      <div id="mapCtl" class="maplibregl-ctrl maplibregl-ctrl-group" hidden>
+        <button id="btnFollow" type="button" title="Follow the drone (F)" aria-label="Follow the drone"><svg><use href="#i-follow"/></svg></button>
+        <button id="btnFit" type="button" title="Show all data" aria-label="Show all data"><svg><use href="#i-fit"/></svg></button>
+      </div>
+      <div id="legend" class="legend" hidden></div>
+      <div id="busy" class="busy" hidden><div class="bx"><div class="spin"></div><div class="msg"></div><div class="progress"><i></i></div></div></div>
+      <div id="banner" hidden></div>
+      <div id="drop" hidden><div><svg><use href="#i-import"/></svg>Drop to import</div></div>
+      <div id="empty">
+        <div class="welcome">
+          <div class="wl-left">
+            <img src="img/icon.svg?v=2.5" alt="" width="64" height="64">
+            <h1>Orbit</h1>
+            <p class="ver" id="welcomeVer"></p>
+            <nav class="wl-actions">
+              <button class="imp" data-kind="drone"><svg><use href="#i-drone"/></svg><span><b>Open Drone Log…</b><small>DJI, ArduPilot, CSV, GPX, KML</small></span></button>
+              <button class="imp" data-kind="radar"><svg><use href="#i-radar"/></svg><span><b>Open Radar Data…</b><small>Robin IRIS XML, other XML or CSV</small></span></button>
+              <button class="imp" data-kind="weather"><svg><use href="#i-wind"/></svg><span><b>Open Weather Data…</b><small>Vaisala CSV or xlsx</small></span></button>
+              <button id="btnLive2"><svg><use href="#i-live"/></svg><span><b>Connect to Live Radar…</b><small>TCP, UDP or a file being written</small></span></button>
+            </nav>
+          </div>
+          <div class="wl-right">
+            <div id="recent" class="recent"></div>
+            <div class="wl-foot"><button id="btnDemo" class="link">Open Demo Data</button><span>or drop files anywhere in the window</span></div>
+          </div>
+        </div>
+      </div>
+      <div id="tip" hidden></div>
+      <div id="toasts" aria-live="polite"></div>
+    </section>
+
+    <aside id="side">
+      <div class="insp-head">
+        <div class="seg wide" role="tablist">
+          <button data-tab="now" class="on" role="tab">Now</button><button data-tab="analysis" role="tab">Analysis</button><button data-tab="files" role="tab">Files</button>
+        </div>
+      </div>
+      <div id="tab-now" class="tab on">
+        <section class="sec" id="cardDrone">
+          <header><i class="sw drone"></i><h3>Drone</h3><span id="droneName"></span></header>
+          <div id="droneNow" class="kv muted">No drone log</div>
+        </section>
+        <section class="sec" id="cardRadar">
+          <header><i class="sw radar"></i><h3>Radar</h3><span id="radarName"></span></header>
+          <div id="radarStatus"></div>
+          <div id="radarNow" class="kv muted">No radar data</div>
+        </section>
+        <section class="sec" id="cardWx">
+          <header><i class="sw wx"></i><h3>Weather</h3><span id="wxName"></span></header>
+          <div class="wxrow">
+            <canvas id="windDial" width="104" height="104"></canvas>
+            <div id="wxNow" class="kv muted">No weather data</div>
+          </div>
+        </section>
+        <section class="sec">
+          <header><h3>Events</h3></header>
+          <div id="eventList" class="events muted">None</div>
+        </section>
+      </div>
+      <div id="tab-analysis" class="tab">
+        <div id="analysisBody" class="empty-note">Import a drone log and radar data to compare them.</div>
+      </div>
+      <div id="tab-files" class="tab">
+        <div id="filesBody"></div>
+      </div>
+    </aside>
+  </main>
+
+  <footer id="bottom">
+    <div id="transport">
+      <div class="tgroup">
+        <button id="btnStart" class="tbtn" title="Go to takeoff (Home)" aria-label="Go to takeoff"><svg><use href="#i-start"/></svg></button>
+        <button id="btnBack10" class="tbtn" title="Back 10 s (Shift+←)" aria-label="Back 10 seconds"><svg><use href="#i-back"/></svg></button>
+        <button id="btnPlay" class="tbtn play" title="Play or pause (Space)" aria-label="Play">
+          <svg class="i-play"><use href="#i-play"/></svg><svg class="i-pause"><use href="#i-pause"/></svg>
+        </button>
+        <button id="btnFwd10" class="tbtn" title="Forward 10 s (Shift+→)" aria-label="Forward 10 seconds"><svg><use href="#i-fwd"/></svg></button>
+      </div>
+      <select id="speed" title="Playback speed">
+        <option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option>
+        <option value="5">5×</option><option value="10">10×</option><option value="20">20×</option><option value="60">60×</option>
+      </select>
+      <div class="timebox"><span id="clock" class="clock">--:--:--.-</span><span id="clockTz" class="tz">UTC</span><span id="clockDate" class="dim"></span><span id="tplus" class="dim"></span></div>
+      <div class="spacer"></div>
+      <button id="btnTlFlight" class="tbtn text" title="Zoom the timeline to the flight (double-click the timeline to show everything)"><svg><use href="#i-flight"/></svg><span>Fit Flight</span></button>
+      <div class="menuwrap">
+        <button id="btnLanes" class="tbtn text" aria-haspopup="true" title="Timeline rows"><svg><use href="#i-lanes"/></svg><span>Lanes</span></button>
+        <div id="laneToggles" class="menu up right lanesmenu" hidden></div>
+      </div>
+    </div>
+    <div id="tlWrap"><canvas id="timeline"></canvas></div>
+    <div id="status">
+      <span id="sbData" class="sbdata"></span>
+      <span class="spacer"></span>
+      <span id="sbLive" class="sblive" hidden></span>
+      <span id="netBadge" class="sbnet"></span>
+      <span id="sbLicense" class="sblic"></span>
+    </div>
+  </footer>
+  <div id="intro"><canvas id="introCanvas"></canvas></div>
+</div>
+
+<input type="file" id="fileInput" multiple hidden>
+
+<dialog id="dlgSettings" class="dlg settings">
+  <form method="dialog" class="dlgbody">
+    <h2>Settings</h2>
+    <nav class="ptabs" role="tablist">
+      <button type="button" data-ptab="general" class="on"><svg><use href="#i-settings"/></svg>General</button>
+      <button type="button" data-ptab="analysis"><svg><use href="#i-chart"/></svg>Analysis</button>
+      <button type="button" data-ptab="maps"><svg><use href="#i-map"/></svg>Maps</button>
+      <button type="button" data-ptab="dji"><svg><use href="#i-drone"/></svg>DJI</button>
+      <button type="button" data-ptab="license"><svg><use href="#i-key"/></svg>License</button>
+    </nav>
+    <section class="ppane on" data-pane="general">
+      <div class="form">
+        <label for="setTz">Clock</label><select id="setTz"><option value="utc">UTC</option><option value="local">This computer's time zone</option></select>
+        <label for="setSpeedUnit">Speed unit</label><select id="setSpeedUnit"><option value="ms">m/s</option><option value="kmh">km/h</option><option value="kt">knots</option></select>
+        <label>Start</label><label class="check"><input type="checkbox" id="setIntro"> Play the 3D intro when Orbit starts</label>
+        <span></span><div><button type="button" id="btnIntroNow" class="ghost small">Play Intro Now</button></div>
+      </div>
+    </section>
+    <section class="ppane" data-pane="analysis">
+      <p class="lead">How radar updates are matched to the drone log.</p>
+      <div class="form">
+        <label for="setGate">Match distance</label><span class="unit"><input id="setGate" type="number" min="5" max="1000" step="5"><i>m</i></span>
+        <label for="setTol">Time tolerance</label><span class="unit"><input id="setTol" type="number" min="0.5" max="30" step="0.5"><i>s</i></span>
+        <label for="setBreak">Track break after</label><span class="unit"><input id="setBreak" type="number" min="1" max="120" step="1"><i>s</i></span>
+        <label for="setBins">Range bins</label><span class="unit"><input id="setBins" type="number" min="50" max="2000" step="50"><i>m</i></span>
+        <label for="setLabels">Drone labels</label><input id="setLabels" type="text" spellcheck="false">
+        <span></span><p class="hint">Radar classifications that count as a drone, separated by commas.</p>
+      </div>
+    </section>
+    <section class="ppane" data-pane="maps">
+      <p class="lead">Map areas you view while online are kept for offline use. To prepare a test site in advance, show it on the map and save it here.</p>
+      <div class="form">
+        <label for="setPrefetchZoom">Detail</label><select id="setPrefetchZoom"><option value="16">Good (zoom 16)</option><option value="17" selected>High (zoom 17)</option><option value="18">Very high (zoom 18)</option></select>
+        <span></span><label class="check"><input type="checkbox" id="setPrefetchLabels"> Include place names</label>
+        <span></span><div><div class="row"><button type="button" id="btnPrefetch" class="ghost">Save Visible Area</button><button type="button" id="btnPrefetchCancel" class="ghost" hidden>Cancel</button></div><div id="prefetchStatus" class="hint"></div></div>
+        <label>Saved maps</label><div class="row"><span id="cacheStats" class="val"></span><button type="button" id="btnClearCache" class="ghost small">Empty Cache…</button></div>
+      </div>
+    </section>
+    <section class="ppane" data-pane="dji">
+      <p class="lead">DJI flight logs from format 13 on (DJI Fly, DJI Pilot 2) are encrypted. Orbit fetches the keys of each log from DJI once, then opens it offline. This needs a free DJI developer API key.</p>
+      <div class="form">
+        <label for="setDjiKey">API key</label><span class="row"><input id="setDjiKey" type="password" autocomplete="off" spellcheck="false" placeholder="SDK key of your Open API app"><button type="button" id="btnShowKey" class="ghost small">Show</button></span>
+      </div>
+      <details><summary>How to get a key</summary>
+        <ol><li>Sign in at developer.dji.com.</li><li>Choose <b>Create App</b> with the app type <b>Open API</b>, and fill in a name, category and description.</li><li>Activate the app from the link DJI emails to you.</li><li>Copy the key labelled <b>SDK key</b> from your developer page and paste it here.</li></ol>
+      </details>
+    </section>
+    <section class="ppane" data-pane="license">
+      <div id="aboutLicense" class="licbox"></div>
+      <div id="aboutInfo" class="hint"></div>
+      <p class="credits">Map imagery: Esri, Maxar, Earthstar Geographics and the GIS user community. Map data © OpenStreetMap contributors, OpenTopoMap (CC-BY-SA). Terrain: Mapzen/AWS Terrain Tiles. Map engine: MapLibre GL JS (BSD-3-Clause). The DJI log format follows the open-source dji-log-parser (MIT).</p>
+    </section>
+    <div class="dlgfoot"><button value="cancel" class="ghost">Cancel</button><button id="btnSaveSettings" value="ok" class="primary">Save</button></div>
+  </form>
+</dialog>
+
+<dialog id="dlgLive" class="dlg">
+  <form method="dialog" class="dlgbody">
+    <h2>Live Radar</h2>
+    <p class="lead">Tracks appear on the map as the radar reports them. Everything received is also recorded to a file for analysis afterwards.</p>
+    <div class="form">
+      <label for="liveMode">Source</label>
+      <select id="liveMode">
+        <option value="tcp-client">Connect to the radar (TCP)</option>
+        <option value="tcp-server">Wait for the radar to connect (TCP)</option>
+        <option value="udp">UDP messages</option>
+        <option value="file">Follow a file the radar software writes</option>
+        <option value="demo">Demo: replay the loaded radar file</option>
+      </select>
+    </div>
+    <div class="form" id="liveNet">
+      <label for="liveHost" class="hostrow">Radar address</label><input id="liveHost" class="hostrow" type="text" placeholder="192.168.1.50" spellcheck="false">
+      <label for="livePort">Port</label><input id="livePort" type="number" min="1" max="65535" placeholder="5000" class="port">
+    </div>
+    <div class="form" id="liveFileWrap" hidden>
+      <label for="livePath">File</label><span class="row"><input id="livePath" type="text" spellcheck="false" placeholder="C:\Radar\export.xml"><button type="button" id="btnLiveBrowse" class="ghost small">Choose…</button></span>
+      <span></span><label class="check"><input type="checkbox" id="liveFromStart"> Read the file from the start, not only new data</label>
+    </div>
+    <p id="liveDemoWrap" hidden class="hint">Plays the loaded radar file at real speed through the live pipeline.</p>
+    <p class="hint">Messages are read as Robin XML (&lt;Robin&gt;…&lt;/Robin&gt;) or as any XML with positions. In listener and UDP modes the computer may ask whether to allow incoming connections.</p>
+    <div id="liveStatusLine" class="small"></div>
+    <div class="dlgfoot"><button value="cancel" class="ghost">Close</button><span class="spacer"></span><button type="button" id="btnLiveStop" class="ghost">Stop</button><button type="button" id="btnLiveStart" class="primary">Start</button></div>
+  </form>
+</dialog>
+
+<dialog id="dlgMapping" class="dlg wide">
+  <form method="dialog" class="dlgbody">
+    <h2>Radar File Fields</h2>
+    <p class="lead" id="mapIntro">Orbit recognised these fields. Check them and change any that are wrong.</p>
+    <label class="field" id="mapTagWrap">Track records<select id="mapTag"></select></label>
+    <div id="mapFields" class="grid3"></div>
+    <div class="grid3" id="mapOrigin">
+      <label class="field">Radar latitude<input id="mapOLat" type="text" placeholder="65.17667"></label>
+      <label class="field">Radar longitude<input id="mapOLon" type="text" placeholder="26.04398"></label>
+      <label class="field">Radar height MSL (m)<input id="mapOAlt" type="text" placeholder="97.5"></label>
+    </div>
+    <label class="field inline">Times without a time zone are in <select id="mapTz"><option value="0">UTC</option><option value="local">this computer's time zone</option></select></label>
+    <div id="mapPreview" class="preview small"></div>
+    <div class="dlgfoot"><button value="cancel" class="ghost">Cancel</button><button id="btnMapOk" value="ok" class="primary">Import</button></div>
+  </form>
+</dialog>
+
+<dialog id="dlgHelp" class="dlg wide">
+  <form method="dialog" class="dlgbody help">
+    <h2>Orbit Help</h2>
+    <div class="cols">
+      <section>
+        <h3>Data</h3>
+        <dl>
+          <dt>Drone log</dt><dd>DJI flight records (<code>DJIFlightRecord_*.txt</code>), ArduPilot DataFlash (<code>.bin</code>) and telemetry (<code>.tlog</code>) logs, or CSV, GPX and KML tracks. Encrypted DJI logs need a DJI API key, set once under Settings › DJI; each log needs internet only the first time it opens.</dd>
+          <dt>Radar</dt><dd>Robin Radar IRIS XML, or any XML or CSV with track positions. For other formats Orbit asks which field is which.</dd>
+          <dt>Weather</dt><dd>Optional. Vaisala exports, or any CSV or xlsx with wind and temperature.</dd>
+          <dt>Fleet</dt><dd>Logs whose times overlap join the same scene, and the radar is compared with every drone.</dd>
+        </dl>
+        <h3>Map</h3>
+        <ul>
+          <li>Drag to pan, scroll to zoom, right-drag or Ctrl-drag to rotate and tilt.</li>
+          <li>The drone path shows the radar status: magenta classified as a drone, cyan tracked, red not detected. Change it under Layers.</li>
+          <li>Click the path to go to that moment; click a radar track for its details.</li>
+          <li>Map areas viewed online stay available offline. To prepare a site, use Settings › Maps.</li>
+        </ul>
+        <h3>Results</h3>
+        <ul>
+          <li>The Analysis tab lists detection, classification, tracking and accuracy, and the CWA 18150 scores. Hover a value for its definition.</li>
+          <li>Export › Test Report (PDF) makes the report. Set its title, site and author under Test Details.</li>
+        </ul>
+      </section>
+      <section>
+        <h3>Keyboard</h3>
+        <table class="keys">
+          <tr><td><kbd>Space</kbd></td><td>Play or pause</td></tr>
+          <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Back or forward 1 s; with <kbd>Shift</kbd> 10 s</td></tr>
+          <tr><td><kbd>Home</kbd> <kbd>End</kbd></td><td>Takeoff; end of data, or back to live</td></tr>
+          <tr><td><kbd>+</kbd> <kbd>−</kbd></td><td>Faster or slower playback</td></tr>
+          <tr><td><kbd>2</kbd> <kbd>3</kbd></td><td>Map or 3D view</td></tr>
+          <tr><td><kbd>F</kbd></td><td>Follow the drone</td></tr>
+          <tr><td><kbd>?</kbd></td><td>Help</td></tr>
+          <tr><td><kbd>Esc</kbd></td><td>Close menus</td></tr>
+        </table>
+        <h3>Timeline</h3>
+        <ul><li>Click or drag to move in time, scroll to zoom, <kbd>Shift</kbd>-drag to pan, double-click to show everything.</li><li>Lanes chooses which rows are shown.</li></ul>
+        <h3>Definitions</h3>
+        <ul>
+          <li><b>Probability of detection</b>: share of airborne seconds with a radar track on the drone.</li>
+          <li><b>Probability of classification</b>: share in which that track was classified as a drone.</li>
+          <li><b>CEP50, CEP95</b>: radius that holds 50 % or 95 % of the radar positions.</li>
+        </ul>
+        <h3>Live radar</h3>
+        <ul><li>Connects to the radar over TCP or UDP, or follows a file the radar software writes. Everything received is recorded for analysis afterwards.</li></ul>
+      </section>
+    </div>
+    <div class="dlgfoot"><span class="hint" id="helpVersion"></span><span class="spacer"></span><button value="cancel" class="primary">Done</button></div>
+  </form>
+</dialog>
+
+<dialog id="dlgDetails" class="dlg">
+  <form method="dialog" class="dlgbody">
+    <h2>Test Details</h2>
+    <p class="lead">Shown on the test report. Site, organisation and author are remembered.</p>
+    <div class="form">
+      <label for="mdTitle">Title</label><input id="mdTitle" type="text">
+      <label for="mdSite">Site</label><input id="mdSite" type="text" placeholder="OuluZone, Oulu">
+      <label for="mdOrg">Organisation</label><input id="mdOrg" type="text">
+      <label for="mdAuthor">Prepared by</label><input id="mdAuthor" type="text">
+      <label for="mdNotes" class="top">Notes</label><textarea id="mdNotes" rows="4" placeholder="Scenario, conditions, anything the reader should know"></textarea>
+    </div>
+    <div class="dlgfoot"><button value="cancel" class="ghost">Cancel</button><button id="btnDetailsSave" value="ok" class="primary">Save</button></div>
+  </form>
+</dialog>
+
+<dialog id="dlgLicense" class="dlg">
+  <form method="dialog" class="dlgbody">
+    <div class="lichead"><img src="img/icon.svg?v=2.5" alt="" width="48" height="48"><div><h2>Orbit License</h2><p class="lead">Enter the license code you received, or open the license file.</p></div></div>
+    <p class="hint" id="licCurrent"></p>
+    <textarea id="licCode" rows="4" spellcheck="false" placeholder="ORBIT1-…" aria-label="License code"></textarea>
+    <p id="licMsg"></p>
+    <div class="licmachine"><span>Computer ID</span><code id="licMachine"></code><button type="button" class="ghost small" id="btnLicCopy"><svg><use href="#i-copy"/></svg>Copy</button></div>
+    <p class="hint">Include the computer ID in your request if the license should work on this computer only.</p>
+    <div class="dlgfoot"><button type="button" id="btnLicFile" class="ghost">Open License File…</button><span class="spacer"></span><button type="button" id="btnLicCancel" class="ghost">Cancel</button><button type="button" id="btnLicOk" class="primary">Activate</button></div>
+    <input type="file" id="licFile" accept=".orbitlicense,.txt" hidden>
+  </form>
+</dialog>
+
+<dialog id="dlgCwa" class="dlg">
+  <form method="dialog" class="dlgbody">
+    <h2>CWA 18150 Scoring</h2>
+    <p class="lead">Each metric scores 1 at its target or better and 0 at its worst value or beyond, linearly in between. CWA 18150 leaves these values to the end user, so agree them before the test. A weight sets how much a metric counts within its function; 0 leaves it out.</p>
+    <div class="form">
+      <label for="cwaAoi">Area of interest</label><span class="unit"><input id="cwaAoi" type="number" min="0" step="50"><i>m radius round the radar</i></span>
+      <span></span><p class="hint" id="cwaAoiNow"></p>
+    </div>
+    <div class="tablewrap"><table class="t cwactx"><thead><tr><th>Metric</th><th>Target (1)</th><th>Worst (0)</th><th>Weight</th></tr></thead><tbody id="cwaRows"></tbody></table></div>
+    <div class="dlgfoot"><button type="button" id="btnCwaReset" class="ghost">Restore Defaults</button><span class="spacer"></span><button value="cancel" class="ghost">Cancel</button><button id="btnCwaSave" value="ok" class="primary">Save</button></div>
+  </form>
+</dialog>
+
+<dialog id="dlgChoose" class="dlg narrow">
+  <form method="dialog" class="dlgbody">
+    <h2>What does this file contain?</h2>
+    <p class="lead" id="chooseName"></p>
+    <div class="dlgfoot"><button value="cancel" class="ghost">Cancel</button><span class="spacer"></span><button value="weather" class="ghost">Weather</button><button value="radar" class="ghost">Radar Tracks</button><button value="drone" class="primary">Drone Track</button></div>
+  </form>
+</dialog>
+
+
+<script src="vendor/maplibre-gl.js"></script>
+<script src="js/util.js"></script>
+<script src="js/xml.js"></script>
+<script src="js/aes.js"></script>
+<script src="js/dji.js"></script>
+<script src="js/radar.js"></script>
+<script src="js/weather.js"></script>
+<script src="js/xlsx.js"></script>
+<script src="js/tracks.js"></script>
+<script src="js/ardupilot.js"></script>
+<script src="js/analysis.js"></script>
+<script src="js/cwa.js"></script>
+<script src="js/license.js"></script>
+<script src="js/demo.js"></script>
+<script src="js/native.js"></script>
+<script src="js/mapview.js"></script>
+<script src="js/timeline.js"></script>
+<script src="js/exporters.js"></script>
+<script src="js/report.js"></script>
+<script src="js/intro.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
