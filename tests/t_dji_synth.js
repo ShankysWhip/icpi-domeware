@@ -1,6 +1,6 @@
 need('util', 'xml', 'aes', 'dji');
 done((async () => {
-  const F = '/Users/severisalmi/Desktop/Orbit/tests/fixtures/';
+  const F = FIX;
   const log = SF.dji.open(bytesOf(F + 'SYNTHETIC_DJIFlightRecord_v14.txt'));
   const keys = JSON.parse(readFile(F + 'SYNTHETIC_DJI_v14_keys.json'));
   print('version', log.version, 'encrypted', log.encrypted, 'aircraft', log.details.aircraftName, 'start', new Date(log.details.startTime).toISOString());

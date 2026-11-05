@@ -1,0 +1,29 @@
+# Tests on GitHub for the orbit branch: the readers, analysis and CWA scoring under Node. Tests that need a real
+# recording skip here (none is in git).
+name: orbit tests
+
+on:
+  pull_request:
+  push:
+    branches: [orbit]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orbit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  app:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Every script parses
+        run: for f in web/js/*.js tests/*.js; do node --check "$f" || exit 1; done
+      - name: Reader, analysis and CWA tests
+        run: node tests/run_tests_node.js

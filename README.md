@@ -20,7 +20,7 @@ measures how well the radar saw the drone, takes a live radar feed, and keeps wo
 ## How it is built
 
 ```
-web/          the app (HTML/CSS/JS, MapLibre GL JS 5.24.0 vendored) — the same files run on both platforms
+web/          the app (HTML/CSS/JS, MapLibre GL JS 5.24.0 from tools/fetch_vendor.py) — the same files run on both platforms
   js/util.js xml.js aes.js dji.js radar.js weather.js xlsx.js tracks.js   readers (no DOM needed; tested with jsc)
   js/ardupilot.js  ArduPilot DataFlash .BIN (GPS week/ms → UTC) and MAVLink .tlog (one drone per system id)
   js/cwa.js        CWA 18150:2024 metrics and 0-1 scores, one drone or several flying together
@@ -33,10 +33,12 @@ server/orbit_server.py   Windows helper (stdlib Python): serves web/, tile cache
 mac/main.swift               Mac app: WKWebView window + the same helper API in Swift (Network.framework)
 windows/install.ps1, uninstall.ps1   per-user install, shortcuts, "Open with", Apps entry
 build.py                     builds dist/ (python3 build.py [mac|windows|check])
-tests/                       jsc reader tests (DJI, Robin, ArduPilot, CWA, fleet), helper API test, start/window test, fake radar,
-                             make_ardupilot.py (synthetic .BIN/.tlog/radar), fixtures (SIMULATED / SYNTHETIC only)
+tests/                       jsc reader tests (DJI, Robin, ArduPilot, CWA, fleet) and run_tests_node.js (the same under Node),
+                             helper API test, start/window test, fake radar, make_ardupilot.py (synthetic .BIN/.tlog/radar),
+                             fixtures (SYNTHETIC only; real recordings go in tests/real-data/, never in git)
 tools/license/                orbit-license (Swift, signs license codes) + Orbit License Maker.app (build.sh); vendor's Mac only
-docs/                        Windows test checklist (HTML source; python3 docs/make_checklist.py prints the PDF)
+tools/fetch_vendor.py         fetches MapLibre and the Windows embeddable Python (not in git), hash-pinned
+docs/                        frames of the start animation
 ```
 
 On Windows the helper is a separate process from its Edge window. One process starts it even when Explorer
@@ -52,18 +54,24 @@ with settings, DJI keychains and live recordings.
 ## Develop and test
 
 ```
+python3 tools/fetch_vendor.py                     # once: MapLibre and the Windows embeddable Python, hash-checked
 python3 server/orbit_server.py --dev --no-browser --print-url --token devtoken   # then open the printed URL
 python3 tests/test_helper_api.py --base http://127.0.0.1:47615 --token devtoken      # 28 checks incl. live modes
 python3 tests/test_instances.py                     # 17 checks: three starts at once, window watching (temp data folder)
 build/Orbit.app/Contents/MacOS/Orbit --serve-only --port 47700 --token devtoken  # Swift helper, same test
 /System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Helpers/jsc tests/jsc_prelude.js tests/t_robin.js
+node tests/run_tests_node.js                      # every t_*.js under Node, as GitHub runs them (-v prints every line)
 build/Orbit.app/Contents/MacOS/Orbit --open FILE --snapshot out.png --wait 10 --eval 'JSON.stringify(SF.state.analysis.coverage)'
 python3 tests/fake_radar.py serve --port 5055 --file radar.xml --speed 10            # fake live radar
 ```
 
-`tests/fixtures/SIMULATED_truth_from_radar_airdata.csv` is a made-up drone track derived from radar data (its clock
-is deliberately 2.0 s off, for the auto-sync test). `SYNTHETIC_DJIFlightRecord_v14.txt` is a generated encrypted
-DJI log with its keys in `SYNTHETIC_DJI_v14_keys.json`. Neither is real flight data.
+Run the commands from the app's folder (`app/` in the combined build on `main`, the top of the `orbit` branch).
+Real recordings never go into git: the tests that need one (`t_robin.js`, `t_dji.js`)
+read it from `tests/real-data/` (or the folder in `ORBIT_REAL_DATA`) and print SKIP without it, and
+`test_helper_api.py` then replays the synthetic radar file. `SYNTHETIC_DJIFlightRecord_v14.txt` is a generated
+encrypted DJI log with its keys in `SYNTHETIC_DJI_v14_keys.json`; the other fixtures come from `make_ardupilot.py`.
+None is real flight data. (The radar-derived truth track Orbit 2.5.1 kept here was made from the real 29 Oct
+recording, so it stays outside git: see `docs/decisions/0002` on `main`.)
 
 ## Licences
 

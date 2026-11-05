@@ -5,11 +5,15 @@
 
 Covers: security checks, settings, the file and open queue endpoints, the tile cache, the DJI
 keychain proxy's error path (no data is sent to DJI) and all four live feed modes, driven by
-fake_radar.py replaying the OuluZone Robin XML."""
+fake_radar.py replaying a Robin XML: the real 29 Oct recording if tests/real-data/ (or ORBIT_REAL_DATA)
+holds it, else the synthetic one in tests/fixtures. Real recordings never go into git."""
 import argparse, json, os, re, subprocess, sys, tempfile, time, urllib.error, urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROBIN = os.path.expanduser('~/Desktop/OULUZONE DATAT/iCPI kopio 2.xml')
+REAL = os.environ.get('ORBIT_REAL_DATA') or os.path.join(HERE, 'real-data')
+ROBIN = os.path.join(REAL, 'iCPI kopio 2.xml')
+if not os.path.exists(ROBIN):
+    ROBIN = os.path.join(HERE, 'fixtures', 'SYNTHETIC_fleet_radar.xml')
 results = []
 
 

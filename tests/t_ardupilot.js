@@ -3,7 +3,6 @@
 need('util', 'xml', 'tracks', 'ardupilot', 'analysis');
 done((async () => {
   const U = SF.util, AP = SF.ardupilot, A = SF.analysis;
-  const FIX = '/Users/severisalmi/Desktop/Orbit/tests/fixtures/';
   const F = U.frame(65, 25), BOOT = Date.UTC(2026, 9, 29, 11, 59, 30), T0 = Date.UTC(2026, 9, 29, 12, 0, 0);
   let n = 0, fails = 0;
   const within = (name, got, want, tol) => {

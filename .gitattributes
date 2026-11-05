@@ -1,0 +1,29 @@
+# One line-ending rule for every machine: the repo and the working copies keep LF, so nobody's editor or Git setting
+# turns a one-line change into a whole-file diff. Windows batch files need CRLF.
+* text=auto eol=lf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Never touched as text
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.glb binary
+*.rrd binary
+*.rbl binary
+*.parquet binary
+*.wasm binary
+*.tgz binary
+*.zip binary
+*.xlsx binary
+*.tif binary
+*.BIN binary
+*.bin binary
+*.tlog binary
+# DJI flight records are binary despite their .txt name
+*DJIFlightRecord*.txt binary
+# Software bills of materials are kept byte for byte, so they still match the publisher's checksum
+*.spdx.json -text

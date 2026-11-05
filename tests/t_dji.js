@@ -1,6 +1,7 @@
 need('util', 'xml', 'aes', 'dji');
 done((async () => {
-  const b = bytesOf('/Users/severisalmi/Desktop/OULUZONE DATAT/DJIFlightRecord_2026-10-29_[15-46-35].txt');
+  const b = realBytes('DJIFlightRecord_2026-10-29_[15-46-35].txt');
+  if (!b) return;
   const t0 = Date.now();
   const log = SF.dji.open(b);
   print('open ms', Date.now() - t0, 'looksLike', SF.dji.looksLike(b, 'DJIFlightRecord_2026-10-29_[15-46-35].txt'));
