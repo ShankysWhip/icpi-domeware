@@ -28,3 +28,6 @@ step, `app/README.md`). `docs/decisions/0002` says how they become one.
     hash-pinned.
 12. **Talk anywhere, decide in writing.** A decision that changes code, the data model or these rules goes into the
     pull request or `docs/decisions/`, not only into a chat.
+13. **Three branches.** `main` is the combined build; `domeware` and `orbit` are the two old apps, each developed on
+    its own. Work on your side's branch; to get a thing into the build, add an item to `inbox/` (`inbox/README.md`).
+    Only the build's own integration work goes to `main` directly, through pull requests.

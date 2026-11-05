@@ -1,7 +1,7 @@
 # 0002 Orbit joins this repo as app/
 
-Date: 2026-11-05. Status: proposed. Niklas chose the direction on 5 Nov; the new repo's place and name and the Orbit
-author's agreement are still open (below).
+Date: 2026-11-05. Status: accepted by Niklas on 5 Nov. The repo is `ShankysWhip/icpi-domeware`, with three branches.
+The Orbit author's agreement is still open (below).
 
 ## Context
 
@@ -13,10 +13,19 @@ own folder and area, uses the shared data model, and that one Robin reader stays
 
 ## Decision
 
-- **One repo, no third copy.** Its base is domeware's history. Orbit comes in as `app/` in one commit, as received
-  from `c48639e` (the only commit in its repo, so no history is lost). The two folders are the parts of the finished
-  app; nothing is built beside them and nothing has to be synced.
-- **The old repos are archived (read-only) on the day the new one starts.** All work happens in the new one.
+- **One repo, three branches (Niklas, 5 Nov):**
+  - `main` is the build: the combined app, domeware's core at the top and Orbit in `app/`.
+  - `domeware` carries the old domeware app, developed on its own. Its base is domeware's history.
+  - `orbit` carries the old Orbit app, developed on its own, with the app at the top of the branch as in its old repo.
+  Orbit came in from `c48639e` (the only commit in its repo, so no history is lost).
+- **Things reach the build through `inbox/`.**
+  - Each side writes what it wants in the build as an item in `inbox/from-domeware/` or `inbox/from-orbit/`.
+  - A strong AI model (Claude Fable) brings in one item per pull request, runs both parts' tests and reports what
+    changed in the outputs.
+  - `inbox/synced.json` records how far each side branch has been taken in.
+  - Method differences (the table below) go to people first.
+  - Integration work on the build itself (the steps below) goes straight to `main`, through pull requests.
+- **The old GitHub repos are archived** once both sides work on their branches here.
 - **The import is byte-exact.** The 59 imported files are Orbit's committed bytes, checked blob by blob.
 - **Left out of the import, and why:**
   - `tests/fixtures/SIMULATED_truth_from_radar_airdata.csv` and `tests/make_fixture.py`: made from the real 29 Oct
@@ -57,6 +66,8 @@ In this order, one pull request each:
 4. **One local server.** Both are stdlib Python on 127.0.0.1 behind an Edge app window.
 5. **One user interface.** Options are shown as pictures first.
 6. **One installer,** built from version tags.
+7. **Side branches stop.** When a part is fully combined, its side branch stops and that part is developed on `main`
+   only.
 
 ## Method differences: people decide, then the AI ports
 
@@ -71,7 +82,9 @@ In this order, one pull request each:
 
 ## Open
 
-- Where the repo lives and its name: the ICPI organisation, or ShankysWhip for now. A transfer later keeps everything.
+- The repo is `ShankysWhip/icpi-domeware` for now. A transfer to an ICPI organisation later keeps everything.
+- Running the AI step automatically (a GitHub Action running Fable on new inbox items) needs an Anthropic API key and
+  costs money per run. Decide later; until then it runs in a Claude Code session.
 - The Orbit author agrees in writing:
   - ICPI owns the code
   - the import is cleaned as above
@@ -85,6 +98,9 @@ In this order, one pull request each:
 
 ## Consequences
 
-- One place per feature, one fix per bug, one set of rules for every developer and AI assistant.
+- Each side keeps working as before on its own branch. The build grows one item at a time, each with a review and a
+  test run, under one set of rules for every developer and AI assistant.
+- A fix to an old app is made on its branch and reaches the build through the inbox, so both stay right. Until a side
+  branch stops, that is a second step for every change.
 - The first weeks carry duplicates on purpose. Each one is removed only after a side-by-side run shows what changes.
 - Real-data tests and screenshots move to local folders, so each developer keeps their own copy of the recordings.

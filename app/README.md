@@ -65,12 +65,13 @@ build/Orbit.app/Contents/MacOS/Orbit --open FILE --snapshot out.png --wait 10 --
 python3 tests/fake_radar.py serve --port 5055 --file radar.xml --speed 10            # fake live radar
 ```
 
-Run the commands from `app/`. Real recordings never go into git: the tests that need one (`t_robin.js`, `t_dji.js`)
+Run the commands from the app's folder (`app/` in the combined build on `main`, the top of the `orbit` branch).
+Real recordings never go into git: the tests that need one (`t_robin.js`, `t_dji.js`)
 read it from `tests/real-data/` (or the folder in `ORBIT_REAL_DATA`) and print SKIP without it, and
 `test_helper_api.py` then replays the synthetic radar file. `SYNTHETIC_DJIFlightRecord_v14.txt` is a generated
 encrypted DJI log with its keys in `SYNTHETIC_DJI_v14_keys.json`; the other fixtures come from `make_ardupilot.py`.
 None is real flight data. (The radar-derived truth track Orbit 2.5.1 kept here was made from the real 29 Oct
-recording, so it stays outside git: see `docs/decisions/0002` at the repo root.)
+recording, so it stays outside git: see `docs/decisions/0002` on `main`.)
 
 ## Licences
 

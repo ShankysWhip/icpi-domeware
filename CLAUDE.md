@@ -41,4 +41,5 @@ full decision record lives outside the repo (`domeware-decision.md`). The field 
 
 Two developers and their AI assistants share this repo. Follow `AGENTS.md`: one issue, one branch, one pull request;
 never push to `main`; tests green before a merge; stay in your area (`.github/CODEOWNERS`). The session data model in
-`docs/DATA.md` is a contract between all tools. Workflow: `CONTRIBUTING.md`.
+`docs/DATA.md` is a contract between all tools. Workflow: `CONTRIBUTING.md`. Three branches: `main` is the combined
+build, `domeware` and `orbit` the two old apps; things reach the build through `inbox/` (`inbox/README.md`).

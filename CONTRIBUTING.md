@@ -12,7 +12,9 @@ A new laptop: `docs/SETUP.md` (uv, `uv sync`, `uv run dw setup`, `uv run dw doct
 ## A change, step by step
 
 1. **Issue first.** Open or pick an issue and assign it to yourself: one person per task.
-2. **Branch from the latest main.** `git switch main`, `git pull`, then `git switch -c <who>/<topic>`.
+2. **Branch from the latest of the branch you work on:** `main` for the combined build, `domeware` or `orbit` for
+   the two old apps. `git switch <branch>`, `git pull`, then `git switch -c <who>/<topic>`. A thing for the build
+   from an old app goes in as an item in `inbox/` (`inbox/README.md`).
 3. **Small commits that say why.** Docs (README, docs/) change in the same branch as the code.
 4. **Check before you push.** `uv run ruff check src tests scripts` and `uv run pytest -q`; in `app/` also
    `node app/tests/run_tests_node.js`. A change you can see:
