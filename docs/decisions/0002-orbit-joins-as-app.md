@@ -71,14 +71,18 @@ In this order, one pull request each:
 
 ## Method differences: people decide, then the AI ports
 
-| | domeware | Orbit |
-|---|---|---|
-| Drone-to-track gate | 50 m | 75 m |
-| Coverage tolerance | 2 s | 3 s |
-| Clock offset | best time shift, bias-free fit | search within ±60 s |
-| Heights | N2000 or ellipsoid through the FIN2023N2000 grid, NLS terrain | flat ground: above take-off and radar ground |
-| Distances | ENU around the radar, through ECEF | spherical (haversine) |
-| CWA 18150 | COURAGEOUS export, scorecards, confidence intervals | 15 metrics as 0-1 scores, fleet pooling |
+Until Niklas confirms a row, the AI building the combined app uses the proposed default, keeps the other as a named
+option, and lists both in its pull request (`combine/README.md`). The proposals are Claude's, from the 4 Nov intake.
+
+| | domeware | Orbit | Proposed default (Niklas confirms) |
+|---|---|---|---|
+| Drone-to-track gate | 50 m | 75 m | 50 m; 75 m reported alongside |
+| Coverage tolerance | 2 s | 3 s | 2 s; 3 s reported alongside |
+| Clock offset | bias-free fit within ±5 s | search within ±60 s | the ±60 s search, then the bias-free fit |
+| Heights | N2000 or ellipsoid through the FIN2023N2000 grid, NLS terrain | flat ground: above take-off and radar ground | domeware's; flat ground only as a labelled fallback without terrain |
+| Distances | ENU around the radar, through ECEF | spherical (haversine) | ENU through ECEF |
+| CWA 18150 | COURAGEOUS export, scorecards, confidence intervals | 15 metrics as 0-1 scores, fleet pooling | Orbit's metric set computed in the core, with domeware's intervals |
+| Robin track ids | numbers only | any text | both (a data contract change) |
 
 ## Open
 

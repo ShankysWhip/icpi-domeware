@@ -3,7 +3,8 @@
 domeware turns one C-UAS test day (radar, drone logs, video, weather) into one UTC-aligned session that can be
 replayed and scored. Internal tool for the three of us at ICPI. Design and reasons: `docs/ARCHITECTURE.md`; the
 full decision record lives outside the repo (`domeware-decision.md`). The field app Orbit lives in `app/`
-(JavaScript, no build step: `app/README.md`; how the two become one: `docs/decisions/0002`).
+(JavaScript, no build step: `app/README.md`; how the two become one: `docs/decisions/0002`). Building the
+combined app: start with `combine/README.md`.
 
 ## Data rules (never break these)
 
