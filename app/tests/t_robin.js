@@ -1,7 +1,9 @@
 need('util', 'xml', 'radar');
 done((async () => {
   const t0 = Date.now();
-  const text = textOf('/Users/severisalmi/Desktop/OULUZONE DATAT/iCPI kopio 2.xml');
+  const raw = realBytes('iCPI kopio 2.xml');
+  if (!raw) return;
+  const text = SF.util.decodeText(raw);
   const t1 = Date.now();
   const st = await SF.radar.parseRobin(text, 'iCPI');
   const t2 = Date.now();
