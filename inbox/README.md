@@ -3,6 +3,7 @@
 `main` is the build: the combined app, with domeware's core at the top and Orbit in `app/`. The two old apps go on
 separately on their own branches, `domeware` and `orbit`. What either side wants in the build lands here as one item,
 and a strong AI model (Claude Fable) brings it into the build, one item per pull request. Decision: `docs/decisions/0002`.
+The plan for combining the two apps, and the brief for the AI that does it: `combine/README.md`.
 
 | Here | What |
 |---|---|

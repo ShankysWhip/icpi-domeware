@@ -3,7 +3,8 @@
 These rules hold for every AI assistant (Claude Code, Codex, Cursor, ...) and for every person. Claude Code also reads
 `CLAUDE.md` (the data rules). The full workflow is in `CONTRIBUTING.md`, the data model in `docs/DATA.md`.
 The repo has two parts: the Python core (`src/`, `tests/`) and the field app Orbit (`app/`: JavaScript with no build
-step, `app/README.md`). `docs/decisions/0002` says how they become one.
+step, `app/README.md`). `docs/decisions/0002` says how they become one; the plan and the brief for the AI
+that combines them: `combine/README.md`.
 
 1. **One issue, one branch, one pull request.** The issue is claimed (assigned) before any code. Branch name:
    `<who>/<topic>`, e.g. `niklas/robin-adapter`, `claude/hud-trends`.

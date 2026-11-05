@@ -8,7 +8,8 @@ Two parts share this repo: the Python core described here (`src/`, `tests/`) and
 one: [docs/decisions/0002](docs/decisions/0002-orbit-joins-as-app.md). The app's tests:
 `node app/tests/run_tests_node.js`; its third-party files, once: `python3 app/tools/fetch_vendor.py`. Branches: `main`
 is the combined build; `domeware` and `orbit` keep the two old apps, each on its own; what goes from them into the
-build: [inbox/](inbox/README.md).
+build: [inbox/](inbox/README.md). The plan for combining them, written for the AI that does it:
+[combine/README.md](combine/README.md).
 
 ## Use
 
