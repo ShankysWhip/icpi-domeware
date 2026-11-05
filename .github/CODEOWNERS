@@ -14,5 +14,8 @@
 /CONTRIBUTING.md             @ShankysWhip
 /CLAUDE.md                   @ShankysWhip
 
+# The app (Orbit, docs/decisions/0002): its author's area once agreed; until then Niklas approves it
+# /app/                        @salmiseba-tech
+
 # The second developer's areas: add when agreed, for example
 # /src/domeware/robin_offline/  @their-github-name

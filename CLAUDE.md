@@ -2,7 +2,8 @@
 
 domeware turns one C-UAS test day (radar, drone logs, video, weather) into one UTC-aligned session that can be
 replayed and scored. Internal tool for the three of us at ICPI. Design and reasons: `docs/ARCHITECTURE.md`; the
-full decision record lives outside the repo (`domeware-decision.md`).
+full decision record lives outside the repo (`domeware-decision.md`). The field app Orbit lives in `app/`
+(JavaScript, no build step: `app/README.md`; how the two become one: `docs/decisions/0002`).
 
 ## Data rules (never break these)
 
@@ -30,10 +31,15 @@ full decision record lives outside the repo (`domeware-decision.md`).
 - Keep labels apart in docs and notes: verified, [inferred], [estimate], [decision].
 - The Rerun viewer binds to 127.0.0.1 only (`dw view`): a listener on all interfaces makes Windows create firewall
   block rules that need an admin to remove.
+- The app's tests: `node app/tests/run_tests_node.js` (readers, analysis, CWA scoring; the tests that need a real
+  recording skip without `app/tests/real-data/`). Third-party files: `python3 app/tools/fetch_vendor.py`.
+- Orbit's helper (`app/server/orbit_server.py`) opens its live-feed listeners on all interfaces unless told
+  otherwise: never start a live TCP/UDP listener on the Windows laptop until that is fixed.
 - Commit messages say why. Plan before big changes.
 
 ## Team rules
 
 Two developers and their AI assistants share this repo. Follow `AGENTS.md`: one issue, one branch, one pull request;
 never push to `main`; tests green before a merge; stay in your area (`.github/CODEOWNERS`). The session data model in
-`docs/DATA.md` is a contract between all tools. Workflow: `CONTRIBUTING.md`.
+`docs/DATA.md` is a contract between all tools. Workflow: `CONTRIBUTING.md`. Three branches: `main` is the combined
+build, `domeware` and `orbit` the two old apps; things reach the build through `inbox/` (`inbox/README.md`).

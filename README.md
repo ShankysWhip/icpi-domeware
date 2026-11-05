@@ -3,6 +3,13 @@
 ICPI internal tool. Turns a C-UAS test run's files (radar output, drone logs, truth, weather) into one UTC-aligned
 session and replays it in its real environment (NLS terrain + aerial photo).
 
+Two parts share this repo: the Python core described here (`src/`, `tests/`) and the field app Orbit in
+[`app/`](app/README.md) (JavaScript: map in 2D and 3D, live radar feed, Windows and Mac installers). How they become
+one: [docs/decisions/0002](docs/decisions/0002-orbit-joins-as-app.md). The app's tests:
+`node app/tests/run_tests_node.js`; its third-party files, once: `python3 app/tools/fetch_vendor.py`. Branches: `main`
+is the combined build; `domeware` and `orbit` keep the two old apps, each on its own; what goes from them into the
+build: [inbox/](inbox/README.md).
+
 ## Use
 
 Short guide in Finnish and English: [docs/USER-GUIDE.md](docs/USER-GUIDE.md). How it is built: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). New laptop: [docs/SETUP.md](docs/SETUP.md).

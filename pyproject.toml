@@ -48,3 +48,7 @@ line-length = 120
 select = ["E4", "E7", "E9", "F", "I", "UP", "B"]
 # compact one-line statements are the house style; `== True` is the pandas idiom for nullable columns
 ignore = ["E702", "E712"]
+
+[tool.pytest.ini_options]
+# domeware's tests only: the app (app/) has its own runner, node app/tests/run_tests_node.js
+testpaths = ["tests"]

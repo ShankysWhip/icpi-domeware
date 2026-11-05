@@ -34,3 +34,18 @@ jobs:
         timeout-minutes: 5
       - name: Tests
         run: uv run pytest -q
+
+  app:
+    # The app (Orbit, app/) is plain JavaScript: its readers, analysis and CWA scoring are tested under Node here.
+    # Tests that need a real recording skip (none is in git); the helper's own tests run on a Mac (decision 0002).
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Every app script parses
+        run: for f in app/web/js/*.js app/tests/*.js; do node --check "$f" || exit 1; done
+      - name: Reader, analysis and CWA tests
+        run: node app/tests/run_tests_node.js

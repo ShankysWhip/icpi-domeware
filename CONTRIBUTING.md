@@ -6,14 +6,18 @@ assistants: `AGENTS.md`. The data model every tool shares: `docs/DATA.md`. The l
 
 ## Set up
 
-A new laptop: `docs/SETUP.md` (uv, `uv sync`, `uv run dw setup`, `uv run dw doctor`).
+A new laptop: `docs/SETUP.md` (uv, `uv sync`, `uv run dw setup`, `uv run dw doctor`). For the app in `app/`:
+`python3 app/tools/fetch_vendor.py` (MapLibre and the Windows embeddable Python, hash-checked; `app/README.md`).
 
 ## A change, step by step
 
 1. **Issue first.** Open or pick an issue and assign it to yourself: one person per task.
-2. **Branch from the latest main.** `git switch main`, `git pull`, then `git switch -c <who>/<topic>`.
+2. **Branch from the latest of the branch you work on:** `main` for the combined build, `domeware` or `orbit` for
+   the two old apps. `git switch <branch>`, `git pull`, then `git switch -c <who>/<topic>`. A thing for the build
+   from an old app goes in as an item in `inbox/` (`inbox/README.md`).
 3. **Small commits that say why.** Docs (README, docs/) change in the same branch as the code.
-4. **Check before you push.** `uv run ruff check src tests scripts` and `uv run pytest -q`. A change you can see:
+4. **Check before you push.** `uv run ruff check src tests scripts` and `uv run pytest -q`; in `app/` also
+   `node app/tests/run_tests_node.js`. A change you can see:
    `uv run dw shots <session>` and put the pictures in the pull request.
 5. **Pull request.** `git push -u origin <who>/<topic>`, open a pull request (the template asks the right
    questions) and link the issue (`Closes #12`).
@@ -36,6 +40,8 @@ A new laptop: `docs/SETUP.md` (uv, `uv sync`, `uv run dw setup`, `uv run dw doct
 
 ## Data and secrets
 
-Data never goes into git. Sessions live in `domeware-data/`, vendored files in `domeware-vendor/` (`dw setup`).
+Data never goes into git. Sessions live in `domeware-data/`, vendored files in `domeware-vendor/` (`dw setup`);
+the app's third-party files come from `app/tools/fetch_vendor.py` and its real recordings stay in
+`app/tests/real-data/`, which git ignores.
 Tests that need real data skip when it is absent and refer to their fixtures by sha256. No tokens, keys, passwords
 or third-party data in commits.
